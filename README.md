@@ -17,6 +17,8 @@ Package that should be installed manually:
 * numba
 * stardist
 * skimage
+* napari
+* tqdm
 
 Make sure local python package is installed :
 
