@@ -113,33 +113,42 @@ def forces_numba_setup(parallel):
 
         N_part = positions.shape[0]    
         individual_forces = np.zeros(positions.shape)
-        # drag_forces = np.zeros(positions.shape)
 
         # i iterates on each rows (each particle)        
         for i in numba.prange(N_part):
             indiv_forces_i = np.zeros(positions.shape[1])
             
-            # num_neighbors = dist_indptr[i+1]-dist_indptr[i]
+            nuclei_size = nuclei_sizes[i,0]
+            wiggle_room = wiggle_rooms[i,0]
+            max_distance = max_distances[i,0]
             
             for dataIdx in range(dist_indptr[i],dist_indptr[i+1]):
                 # j is the index of a neighboring cell
                 j = dist_indices[dataIdx]
 
-                force_magnitude = yalla_force_numba(
-                    dist_data[dataIdx],
-                    nuclei_sizes[j,0],
-                    wiggle_rooms[j,0],
-                    max_distances[j,0],
-                    eps
+                # force_magnitude = yalla_force_numba(
+                #     dist_data[dataIdx],
+                #     nuclei_size,
+                #     wiggle_room,
+                #     max_distance,
+                #     eps
+                # )
+                force_magnitude = yalla_force_numba_corrected(
+                    r=dist_data[dataIdx],
+                    nuclei_size=nuclei_size,
+                    wiggle_room=wiggle_room,
+                    neighbor_size=nuclei_sizes[j,0],
+                    neighbor_room=wiggle_rooms[j,0],
+                    max_distance=max_distance,
+                    eps=eps
                 )
                 dist_vector_ij = (positions[j]-positions[i])
 
                 indiv_forces_i += force_magnitude*dist_vector_ij
-                # drag_forces[j] -= (force_magnitude/num_neighbors)*dist_vector_ij
 
             individual_forces[i] = indiv_forces_i              
 
-        return individual_forces# + drag_forces
+        return individual_forces
     
     return individual_forces_from_scratch
 
