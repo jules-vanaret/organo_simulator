@@ -1,14 +1,18 @@
 import numpy as np
 from tqdm import tqdm
-from organo_simulator.simulator import FastOverdampedSimulator, Renderer
-from packajules.utils import make_bounding_box
+from organo_simulator.simulator import FastOverdampedSimulator
+from organo_simulator.renderer import Renderer
+from organo_simulator.utils import make_bounding_box
 import napari
 
 
 np.random.seed(2022)
 
-N_part = 1000
-average_nuclei_size=8
+d=3 # dimension of simulation
+N_part = 200 # number of particles
+average_nuclei_size=8 # in physical units
+
+# normal distribution of size, clipped
 nuclei_sizes = np.clip(
                     np.random.normal(
                         loc=average_nuclei_size,
@@ -18,45 +22,46 @@ nuclei_sizes = np.clip(
                     0.8*average_nuclei_size,
                     1.2*average_nuclei_size
                 )
-d=3
-Nx = 200
-n_rays=32
-
-
+# number of "fast" cells 
+# (usually bigger persistence times 
+# and/or lower viscosities
+# and/or bigger diffusion coefficients)
 N_fast = int(0.1*N_part)
-persistence_times = np.array([10]*(N_part-N_fast) + [10]*N_fast)
+# persistence times (in physical units) for the OU process
+persistence_times = np.array([10]*(N_part-N_fast) + [100]*N_fast)
 viscosities = np.array([1000]*(N_part-N_fast) + [1000]*N_fast)
-#Ds = np.array([1]*(N_part-N_fast) + [1]*N_fast)
-Ds = 1.0
+Ds = np.array([1.0]*(N_part-N_fast) + [1.0]*N_fast) # diffusion coefficients
+
+
+render = False # wether or not to add render (takes a looong time)
+Nx = 200 # length of the box in pixels for the rendering 
+n_rays=32 # number of stardist rays used for rendering
+
 
 
 simulator = FastOverdampedSimulator(
-    L=None,
+    L=None, # will be initialized automatically
     Nx=Nx,
     d=d,
     N_part=N_part,
     nuclei_sizes=nuclei_sizes,
-    viscosity=1000,
+    viscosity=viscosities,
     D=Ds,
     persistence_time=persistence_times,
     energy_potential=1,
-    max_distance_factor=2/0.7,
-    wiggle_room_factor=0.2,
-    parallel=True,
-    initialisation='sausage'
+    max_distance_factor=2/0.7, # times nuclei size
+    wiggle_room_factor=0.2, # times nuclei size
+    parallel=True
 )
 
-data = np.empty((0, d+1))
-data_vor = []
 
 skip=100
-total_steps = 10000
-render = False
-
+total_steps = 10000 # total number of simulation steps
 Nt = int(total_steps/skip)
 
-data = np.empty((N_part*Nt,d+1))
 
+# Initializing arrays to collect data
+data = np.empty((N_part*Nt,d+1))
 data_points=[]
 
 
@@ -73,7 +78,7 @@ for i in tqdm(range(total_steps)):
 
 
 
-
+# Show fast and slow cells in different colors
 data_slow = np.zeros(
     shape=((N_part-N_fast)*(int(max(data[:,0]))+1),d+1)
 )
@@ -125,7 +130,6 @@ if render:
 
 
 viewer = napari.Viewer(ndisplay=d)
-bb = make_bounding_box(bb_shape=(Nx,)*d)
 
 
 viewer.add_points(data=data,      size=3, scale=(1,)+(Nx/(2*simulator.L),)*d)
@@ -138,7 +142,10 @@ if render:
     viewer.add_image(render_data)
     viewer.add_labels(voronoi_labels, visible=False)
 
+
+bb = make_bounding_box(bb_shape=(Nx,)*d)
 viewer.add_image(bb, blending='additive',opacity=0.25)
+
 
 viewer.reset_view()
 napari.run()

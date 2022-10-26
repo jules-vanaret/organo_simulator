@@ -61,7 +61,10 @@ def drag_velocity_from_neighbors(velocities,
 
 
 @numba.jit(nopython=True)
-def yalla_force_numba_corrected(r, nuclei_size, wiggle_room, max_distance, eps):
+def yalla_force_numba_corrected(r, 
+    nuclei_size, wiggle_room, 
+    neighbor_size, neighbor_room, 
+    max_distance, eps):
         """
         See 'ya||a: GPU-Powered Spheroid Models for Mesenchyme
         and Epithelium, Sharpe et al (2019)'
@@ -70,10 +73,11 @@ def yalla_force_numba_corrected(r, nuclei_size, wiggle_room, max_distance, eps):
         if r>max_distance:
             return 0
 
-        nuclei_diameter = nuclei_size+neighbor_size
+        nuc_nuc_equilibrium_distance = nuclei_size+neighbor_size
+        sum_wiggle_rooms = wiggle_room + neighbor_room
 
-        repulsion = np.maximum(nuclei_diameter - r,0)
-        attraction = np.maximum(r - (nuclei_diameter + 2*wiggle_room),0)
+        repulsion = np.maximum(nuc_nuc_equilibrium_distance - r,0)
+        attraction = np.maximum(r - (nuc_nuc_equilibrium_distance + sum_wiggle_rooms),0)
 
         # divide by r so that (positions[j]-positions[i]) can be 
         # directly multiplied by the magnitude without having to
@@ -140,31 +144,7 @@ def forces_numba_setup(parallel):
     return individual_forces_from_scratch
 
 
-@numba.jit(nopython=True)#,nogil=True)#,parallel=True)
-def individual_forces_from_positions(positions, 
-                      forces_data,forces_indices,forces_indptr): 
 
-    numRows_forces = positions.shape[0]    
-    individual_forces = np.zeros(positions.shape)
-
-    for i in range(numRows_forces):#numba.prange(numRows_forces):
-        indiv_forces_i = np.zeros(positions.shape[1])       
-        for dataIdx in range(forces_indptr[i],forces_indptr[i+1]):
-
-            j = forces_indices[dataIdx]
-            indiv_forces_i += forces_data[dataIdx]*(positions[j]-positions[i])
-
-        individual_forces[i] = indiv_forces_i            
-
-    return individual_forces
-
-@numba.njit#('(int32[:],int32[:],float64[:,:],int32[:])')
-def positions_to_vectors(rows, cols, positions, shape):
-   
-    vectors = np.zeros(shape)
-    for i,j in zip(rows,cols):
-        vectors[i,j] = positions[i] - positions[j]
-    return vectors
 
 class FastOverdampedSimulator:
     def __init__(self, L, Nx, d, N_part, nuclei_sizes, viscosity, 
@@ -225,6 +205,10 @@ class FastOverdampedSimulator:
 
     def update_dynamics(self, dt):
 
+        ornstein_uhlenbeck_process = (0 - self.langevin_force)/self.persistence_time \
+                                   + self.__langevin_noise(sigma=self.sigma_langevin, N_part=self.N_part, d=self.d)
+        self.langevin_force = self.langevin_force + dt * ornstein_uhlenbeck_process
+        
         deterministic_forces,sparse_distance_norms = self.__attraction_repulsion_force(
             positions=self.positions,
             nuclei_sizes=self.nuclei_sizes,
@@ -232,9 +216,17 @@ class FastOverdampedSimulator:
             wiggle_room_factor=self.wiggle_room_factor,
             energy_potential=self.energy_potential
         )
+        F = deterministic_forces + self.langevin_force 
+        velocities = F/self.viscosity
+        velocities = velocities + drag_velocity_from_neighbors(
+            velocities,
+            sparse_distance_norms.indices,
+            sparse_distance_norms.indptr
+        )
+        
         # Heun's method
-        dummy_positions = self.positions + dt * deterministic_forces/self.viscosity
-        deterministic_forces_dummy,_ = self.__attraction_repulsion_force(
+        dummy_positions = self.positions + dt * velocities
+        deterministic_forces_dummy,sparse_distance_norms = self.__attraction_repulsion_force(
             positions=dummy_positions,
             nuclei_sizes=self.nuclei_sizes,
             max_distance_factor=self.max_distance_factor,
@@ -243,9 +235,6 @@ class FastOverdampedSimulator:
         )
         deterministic_forces  = (deterministic_forces + deterministic_forces_dummy)/2
 
-        ornstein_uhlenbeck_process = (0 - self.langevin_force)/self.persistence_time \
-                                   + self.__langevin_noise(sigma=self.sigma_langevin, N_part=self.N_part, d=self.d)
-        self.langevin_force = self.langevin_force + dt * ornstein_uhlenbeck_process
         
         F = deterministic_forces + self.langevin_force 
         velocities = F/self.viscosity
@@ -284,7 +273,7 @@ class FastOverdampedSimulator:
             positions = L + radiuses * self.__random_2d_unit_vectors(N_part)
         elif d==3:
             if initialisation == 'sausage':
-                positions = self.__initiate_as_sausage(N_part)
+                positions = self.__initialize_as_sausage(N_part)
             else:
                 positions = L + radiuses * self.__random_3d_unit_vectors(N_part)
         
@@ -311,7 +300,7 @@ class FastOverdampedSimulator:
 
         return np.array([x,y,z]).T
 
-    def __initiate_as_sausage(self, N_part):
+    def __initialize_as_sausage(self, N_part):
         
         mean_nuclei_size = np.mean(self.nuclei_sizes)
         l = (N_part * 4 * 64 * mean_nuclei_size**3 / 0.740) ** (1/self.d) / np.sqrt(2)
@@ -608,5 +597,30 @@ if False:
     #         F = F*total_force_norms[:,None]
 
     #     return F
+#     @numba.jit(nopython=True)#,nogil=True)#,parallel=True)
+# def individual_forces_from_positions(positions, 
+#                       forces_data,forces_indices,forces_indptr): 
+
+#     numRows_forces = positions.shape[0]    
+#     individual_forces = np.zeros(positions.shape)
+
+#     for i in range(numRows_forces):#numba.prange(numRows_forces):
+#         indiv_forces_i = np.zeros(positions.shape[1])       
+#         for dataIdx in range(forces_indptr[i],forces_indptr[i+1]):
+
+#             j = forces_indices[dataIdx]
+#             indiv_forces_i += forces_data[dataIdx]*(positions[j]-positions[i])
+
+#         individual_forces[i] = indiv_forces_i            
+
+#     return individual_forces
+
+# @numba.njit#('(int32[:],int32[:],float64[:,:],int32[:])')
+# def positions_to_vectors(rows, cols, positions, shape):
+   
+#     vectors = np.zeros(shape)
+#     for i,j in zip(rows,cols):
+#         vectors[i,j] = positions[i] - positions[j]
+#     return vectors
     pass
 
