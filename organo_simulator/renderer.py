@@ -2,6 +2,7 @@ import numpy as np
 import stardist
 from pyclesperanto_prototype import voronoi_labeling, select_device
 from skimage.util import random_noise
+from scipy.ndimage import gaussian_filter as scipy_gaussian
 
 
 class Renderer:

@@ -8,6 +8,7 @@ import napari
 
 np.random.seed(2022)
 
+d=3 # dimension of simulation
 N_part = 200 # number of particles
 average_nuclei_size=8 # in physical units
 
@@ -21,12 +22,6 @@ nuclei_sizes = np.clip(
                     0.8*average_nuclei_size,
                     1.2*average_nuclei_size
                 )
-
-d=3 # dimension of simulation
-
-Nx = 200 # length of the box in pixels for the rendering 
-n_rays=32 # number of stardist rays used for rendering
-
 # number of "fast" cells 
 # (usually bigger persistence times 
 # and/or lower viscosities
@@ -36,6 +31,12 @@ N_fast = int(0.1*N_part)
 persistence_times = np.array([10]*(N_part-N_fast) + [20]*N_fast)
 viscosities = np.array([1000]*(N_part-N_fast) + [1000]*N_fast)
 Ds = np.array([1.0]*(N_part-N_fast) + [1.0]*N_fast) # diffusion coefficients
+
+
+render = True # wether or not to add render (takes a looong time)
+Nx = 200 # length of the box in pixels for the rendering 
+n_rays=32 # number of stardist rays used for rendering
+
 
 
 simulator = FastOverdampedSimulator(
@@ -48,23 +49,19 @@ simulator = FastOverdampedSimulator(
     D=Ds,
     persistence_time=persistence_times,
     energy_potential=1,
-    max_distance_factor=2/0.7,
-    wiggle_room_factor=0.2,
+    max_distance_factor=2/0.7, # times nuclei size
+    wiggle_room_factor=0.2, # times nuclei size
     parallel=True
 )
 
-# Initializing arrays to collect data
-data = np.empty((0, d+1))
-data_vor = []
 
 skip=100
-total_steps = 10000 # total number of simulation steps
-render = False # wether or not to add render (takes a looong time)
-
+total_steps = 200 # total number of simulation steps
 Nt = int(total_steps/skip)
 
-data = np.empty((N_part*Nt,d+1))
 
+# Initializing arrays to collect data
+data = np.empty((N_part*Nt,d+1))
 data_points=[]
 
 

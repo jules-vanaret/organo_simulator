@@ -1,6 +1,5 @@
 import numpy as np
 import numba
-from scipy.ndimage import gaussian_filter as scipy_gaussian
 from scipy.spatial import KDTree as scipy_KDTree
 
 @numba.jit(nopython=True)
