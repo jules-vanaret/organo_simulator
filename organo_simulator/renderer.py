@@ -6,7 +6,7 @@ from scipy.ndimage import gaussian_filter as scipy_gaussian
 
 
 class Renderer:
-    def __init__(self, nuclei_sizes, N_part, n_rays, Nx, d, L, 
+    def __init__(self, nuclei_sizes, N_part, n_rays, Nx, d, L, cell_to_nuc_ratio,
                 gaussian_blur_sigma, gaussian_noise_mean, gaussian_noise_sigma):
         
         if isinstance(nuclei_sizes, int):
@@ -21,6 +21,7 @@ class Renderer:
         self.Nx = Nx
         self.d = d
         self.L = L
+        self.cell_to_nuc_ratio = cell_to_nuc_ratio
 
         if d==2:
             self.rendering_star_dist = lambda labels: stardist.geometry.geom2d.star_dist(labels, n_rays=n_rays, mode='opencl')
@@ -60,14 +61,14 @@ class Renderer:
 
         all_distances_sd = self.rendering_star_dist(voronoi_labels_t)    
         #print(2)    
-        all_distances_sd = all_distances_sd[coords_pix]
+        all_distances_sd = all_distances_sd[coords_pix] 
         
-        all_distances = all_distances_sd.copy()
-        all_distances = np.clip(all_distances,0,nuclei_sizes_pix)
+        all_distances = all_distances_sd.copy() 
+        all_distances = np.clip(all_distances * (0.5*self.cell_to_nuc_ratio),0,nuclei_sizes_pix) / (0.5*self.cell_to_nuc_ratio)
 
         problematic_distances_mask = np.less(all_distances, nuclei_sizes_pix)
-        sum_prob_dist2 = np.sum(problematic_distances_mask*np.power(all_distances,self.d), axis=1)
-        sum_ok_dist2 = np.sum((~problematic_distances_mask)*np.power(all_distances,self.d), axis=1)
+        sum_prob_dist2 = np.sum(np.power(problematic_distances_mask*all_distances,self.d), axis=1)
+        sum_ok_dist2 = np.sum(np.power((~problematic_distances_mask)*all_distances,self.d), axis=1)
 
         num = (target_volume_pix/prefactor_volume)[:,0] - sum_prob_dist2
         factors = np.power(
@@ -84,7 +85,7 @@ class Renderer:
         all_distances = np.clip(all_distances, 0, all_distances_sd)
 
 
-        all_distances = all_distances * 0.9
+        all_distances = all_distances * self.cell_to_nuc_ratio
         #print(3)
         labels = self.rendering_polygons_to_label(
             all_distances,
