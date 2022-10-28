@@ -9,8 +9,17 @@ import napari
 np.random.seed(2022)
 
 d=3 # dimension of simulation
-N_part = 200 # number of particles
+N_part = 400 # number of particles
 average_nuclei_size=8 # in physical units
+
+skip=1000
+total_steps = 10000 # total number of simulation steps
+Nt = int(total_steps/skip)
+
+render = False # wether or not to add render (takes a looong time)
+Nx = 200 # length of the box in pixels for the rendering 
+n_rays = 32 # number of stardist rays used for rendering
+
 
 # normal distribution of size, clipped
 nuclei_sizes = np.clip(
@@ -19,23 +28,15 @@ nuclei_sizes = np.clip(
                         scale=0.1*average_nuclei_size,
                         size=N_part
                     ),
-                    0.8*average_nuclei_size,
-                    1.2*average_nuclei_size
+                    0.9*average_nuclei_size,
+                    1.1*average_nuclei_size
                 )
-# number of "fast" cells 
-# (usually bigger persistence times 
-# and/or lower viscosities
-# and/or bigger diffusion coefficients)
-N_fast = int(0.1*N_part)
+
+N_fast = int(0.05*N_part)
 # persistence times (in physical units) for the OU process
-persistence_times = np.array([10]*(N_part-N_fast) + [100]*N_fast)
-viscosities = np.array([1000]*(N_part-N_fast) + [1000]*N_fast)
-Ds = np.array([1.0]*(N_part-N_fast) + [1.0]*N_fast) # diffusion coefficients
-
-
-render = False # wether or not to add render (takes a looong time)
-Nx = 200 # length of the box in pixels for the rendering 
-n_rays=32 # number of stardist rays used for rendering
+persistence_times   = np.array([100 ]*(N_part-N_fast) + [100]*N_fast, dtype=float)
+viscosities         = np.array([1000]*(N_part-N_fast) + [1000]*N_fast, dtype=float)
+Ds                  = np.array([0.01]*(N_part-N_fast) + [0.01]*N_fast, dtype=float) # diffusion coefficients
 
 
 
@@ -55,14 +56,9 @@ simulator = FastOverdampedSimulator(
 )
 
 
-skip=100
-total_steps = 10000 # total number of simulation steps
-Nt = int(total_steps/skip)
-
-
 # Initializing arrays to collect data
 data = np.empty((N_part*Nt,d+1))
-data_points=[]
+data_points=np.empty((Nt,N_part,d))
 
 
 for i in tqdm(range(total_steps)):
@@ -74,7 +70,17 @@ for i in tqdm(range(total_steps)):
 
         #data = np.vstack((data, time_pos))
         data[int(i/skip)*len(time_pos):(int(i/skip)+1)*len(time_pos),:] = time_pos
-        data_points.append(positions)
+        data_points[int(i/skip)] = positions
+
+        path2save = '/home/jvanaret/data/data_trackability_study/simulations/test'
+        savename = f'positions_{str(i).zfill(int(np.log10(total_steps))+1)}.csv'
+
+        np.savetxt(
+            f'{path2save}/{savename}',
+            positions,
+            delimiter=','
+        )
+
 
 
 
@@ -94,6 +100,7 @@ for t in tqdm(range(int(max(data[:,0]))+1)):
 
 
 
+
 if render:
 
     labels=np.empty(shape=((Nt,)+(Nx,)*d), dtype=int)
@@ -109,7 +116,8 @@ if render:
         L=simulator.L,
         gaussian_blur_sigma=1,
         gaussian_noise_mean=0.04,
-        gaussian_noise_sigma=0.04
+        gaussian_noise_sigma=0.04,
+        cell_to_nuc_ratio=0.9
     )
 
     render_data = np.empty(shape=((Nt,)+(Nx,)*d), dtype=float)
@@ -125,17 +133,13 @@ if render:
 
 
 
-
-
-
-
 viewer = napari.Viewer(ndisplay=d)
 
 
-viewer.add_points(data=data,      size=3, scale=(1,)+(Nx/(2*simulator.L),)*d)
+viewer.add_points(data=data,      size=3, scale=(1,)+(Nx/(2*simulator.L),)*d, visible=False)
 
-viewer.add_points(data=data_slow, size=4,face_color='blue', scale=(1,)+(Nx/(2*simulator.L),)*d)
-viewer.add_points(data=data_fast, size=4,face_color='red', scale=(1,)+(Nx/(2*simulator.L),)*d)
+viewer.add_points(data=data_slow, size=4,face_color='blue', scale=(1,)+(Nx/(2*simulator.L),)*d, visible=not render)
+viewer.add_points(data=data_fast, size=4,face_color='red', scale=(1,)+(Nx/(2*simulator.L),)*d, visible=not render)
 
 if render:
     viewer.add_labels(labels)
