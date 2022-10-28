@@ -82,7 +82,7 @@ def yalla_force_numba_corrected(r,
         # divide by r so that (positions[j]-positions[i]) can be 
         # directly multiplied by the magnitude without having to
         # compute the distance again 
-        return eps * (attraction - 4 * repulsion)/r
+        return eps * (attraction - 2 * repulsion)/r
 
 @numba.jit(nopython=True)
 def yalla_force_numba(r, nuclei_size, wiggle_room, max_distance, eps):
@@ -167,12 +167,13 @@ class FastOverdampedSimulator:
         self.N_part = N_part
 
         if isinstance(nuclei_sizes, int):
-            nuclei_sizes = nuclei_sizes * np.ones(shape=(N_part,1))
+            nuclei_sizes = nuclei_sizes * np.ones(shape=(N_part,1),dtype=float)
         elif isinstance(nuclei_sizes, np.ndarray):
             if nuclei_sizes.ndim == 1:
                 nuclei_sizes = nuclei_sizes[:,None]  
         self.nuclei_sizes = nuclei_sizes
         self.max_nuclei_size = np.max(nuclei_sizes)
+        self.max_overall_distance = self.max_nuclei_size * max_distance_factor
 
         rho = 0.906 if d==2 else 0.740
         self.equilibrium_radius = np.mean(nuclei_sizes) * np.power(N_part/rho,1/d)
@@ -201,6 +202,8 @@ class FastOverdampedSimulator:
         
         self.energy_potential = energy_potential
         self.max_distance_factor = max_distance_factor
+        self.max_distances = max_distance_factor * self.nuclei_sizes
+        self.wiggle_rooms = wiggle_room_factor * self.nuclei_sizes
         self.wiggle_room_factor = wiggle_room_factor
 
         self.positions = self.__initialize_positions(L, N_part, self.equilibrium_radius, d, initialisation)
@@ -208,21 +211,30 @@ class FastOverdampedSimulator:
 
         self.individual_forces_from_scratch = forces_numba_setup(parallel)
 
+        self.t = 0
+
         if parallel:
             numba.set_num_threads(2)
         # foo = 'bar'
 
     def update_dynamics(self, dt):
 
+        self.t += dt
+
         ornstein_uhlenbeck_process = (0 - self.langevin_force)/self.persistence_time \
-                                   + self.__langevin_noise(sigma=self.sigma_langevin, N_part=self.N_part, d=self.d)
+                                   + self.__langevin_noise(
+                                        sigma=self.sigma_langevin, 
+                                        N_part=self.N_part, 
+                                        d=self.d
+                                    )
         self.langevin_force = self.langevin_force + dt * ornstein_uhlenbeck_process
         
         deterministic_forces,sparse_distance_norms = self.__attraction_repulsion_force(
             positions=self.positions,
             nuclei_sizes=self.nuclei_sizes,
-            max_distance_factor=self.max_distance_factor,
-            wiggle_room_factor=self.wiggle_room_factor,
+            max_overall_distance=self.max_overall_distance,
+            max_distances=self.max_distances,
+            wiggle_rooms=self.wiggle_rooms,
             energy_potential=self.energy_potential
         )
         F = deterministic_forces + self.langevin_force 
@@ -238,8 +250,9 @@ class FastOverdampedSimulator:
         deterministic_forces_dummy,sparse_distance_norms = self.__attraction_repulsion_force(
             positions=dummy_positions,
             nuclei_sizes=self.nuclei_sizes,
-            max_distance_factor=self.max_distance_factor,
-            wiggle_room_factor=self.wiggle_room_factor,
+            max_overall_distance=self.max_overall_distance,
+            max_distances=self.max_distances,
+            wiggle_rooms=self.wiggle_rooms,
             energy_potential=self.energy_potential
         )
         deterministic_forces  = (deterministic_forces + deterministic_forces_dummy)/2
@@ -324,14 +337,14 @@ class FastOverdampedSimulator:
         return positions
 
     def __attraction_repulsion_force(self, positions, nuclei_sizes, 
-                                    max_distance_factor, wiggle_room_factor,
+                                    max_overall_distance, max_distances, wiggle_rooms,
                                      energy_potential):
         
         tree = scipy_KDTree(positions)
 
         sparse_distance_norms = tree.sparse_distance_matrix(
                             tree,
-                            max_distance=max_distance_factor*self.max_nuclei_size,
+                            max_distance=max_overall_distance,
                             output_type='coo_matrix'
                         ).tocsr()
 
@@ -344,8 +357,8 @@ class FastOverdampedSimulator:
             dist_indptr=sparse_distance_norms.indptr,
             nuclei_sizes=nuclei_sizes,
             eps=energy_potential,
-            wiggle_rooms=wiggle_room_factor*nuclei_sizes,
-            max_distances=max_distance_factor*nuclei_sizes
+            wiggle_rooms=wiggle_rooms,
+            max_distances=max_distances
         )
 
         return F, sparse_distance_norms
@@ -375,261 +388,4 @@ class FastOverdampedSimulator:
 
 
 
-if False:
-    # def __naive_potential_force_sparse(self, r, nuclei_size, eps, wiggle_room):
-    #     """
-    #     See 'ya||a: GPU-Powered Spheroid Models for Mesenchyme
-    #     and Epithelium, Sharpe et al (2019)'
-    #     """
-
-    #     nuclei_diameter = 2 * nuclei_size
-
-    #     matrix_of_1s = r.power(0)
-
-    #     value_1 = (matrix_of_1s*nuclei_diameter - r).maximum(0)
-    #     value_2 = (r - matrix_of_1s * (nuclei_diameter + 2*wiggle_room)).maximum(0)
-
-    #     return - eps * (4 * value_1 - value_2)
-
-    # def __naive_potential_force(self, r, nuclei_size, eps, wiggle_room):
-    #     """
-    #     See 'ya||a: GPU-Powered Spheroid Models for Mesenchyme
-    #     and Epithelium, Sharpe et al (2019)'
-    #     """
-
-    #     nuclei_diameter = 2 * nuclei_size
-
-    #     value_1 = np.maximum(nuclei_diameter - r, 0)
-    #     value_2 = np.maximum(r - nuclei_diameter - 2*wiggle_room, 0)
-
-    #     return - eps * (4 * value_1 - value_2)
-
-
-
-    # def __attraction_repulsion_force_old3(self, positions, nuclei_size, 
-    #                                 max_distance_factor, wiggle_room_factor,
-    #                                  energy_potential, clip_force):
-        
-    #     tree = scipy_KDTree(positions)
-
-    #     sparse_distance_norms = tree.sparse_distance_matrix(
-    #                         tree,
-    #                         max_distance=max_distance_factor*nuclei_size,
-    #                         output_type='coo_matrix'
-    #                     ).tocsr()
-
-    #     sparse_distance_norms.eliminate_zeros()
-
-    #     forces = self.__naive_potential_force_sparse(
-    #         r=sparse_distance_norms,
-    #         nuclei_size=nuclei_size,
-    #         eps=energy_potential,
-    #         wiggle_room=wiggle_room_factor*nuclei_size
-    #     )
-
-    #     # Artificially account for the unit vectors normalization
-    #     forces = forces.multiply(sparse_distance_norms.power(-1))
-
-    #     F = individual_forces_from_positions(
-    #         positions=positions,
-    #         forces_data=forces.data,
-    #         forces_indices=forces.indices,
-    #         forces_indptr=forces.indptr
-    #     )
-
-    #     if not(clip_force is None):
-    #         total_force_norms = np.linalg.norm(F, axis=1)
-    #         mask = total_force_norms!=0
-            
-    #         F[mask] = F[mask]/total_force_norms[mask][:,None]
-
-    #         total_force_norms = np.clip(total_force_norms,-clip_force, clip_force)
-    #         F = F * total_force_norms[:,None]
-
-    #     return F
-
-
-    # def __attraction_repulsion_force_old2(self, positions, nuclei_size, 
-    #                                 max_distance_factor, wiggle_room_factor,
-    #                                  energy_potential, clip_force):
-        
-    #     tree = scipy_KDTree(positions)
-
-    #     sparse_distance_norms = tree.sparse_distance_matrix(
-    #                         tree,
-    #                         max_distance=max_distance_factor*nuclei_size,
-    #                         output_type='coo_matrix'
-    #                     ).tocsr()
-
-    #     sparse_distance_norms.eliminate_zeros()
-
-    #     forces = self.__naive_potential_force_sparse(
-    #         r=sparse_distance_norms,
-    #         nuclei_size=nuclei_size,
-    #         eps=energy_potential,
-    #         wiggle_room=wiggle_room_factor*nuclei_size
-    #     )
-
-    #     # Artificially account for the unit vectors normalization
-    #     forces = forces.multiply(sparse_distance_norms.power(-1))
-
-    #     non_zero_elems = sparse_distance_norms.nonzero()
-    #     unit_vectors = positions_to_vectors(
-    #         rows=non_zero_elems[0],
-    #         cols=non_zero_elems[1],
-    #         positions=positions,
-    #         shape=(len(positions),len(positions),self.d)
-    #     )
-
-    #     F = np.sum(forces.toarray()[:,:,None] * unit_vectors, axis=0)
-
-    #     if not(clip_force is None):
-    #         total_force_norms = np.linalg.norm(F, axis=1)
-    #         mask = total_force_norms!=0
-            
-    #         F[mask] = F[mask]/total_force_norms[mask][:,None]
-
-    #         total_force_norms = np.clip(total_force_norms,-clip_force, clip_force)
-    #         F = F * total_force_norms[:,None]
-
-    #     return F
-
-    # def __attraction_repulsion_force_old(self, positions, nuclei_size, 
-    #                                 max_distance_factor, wiggle_room_factor,
-    #                                  energy_potential, clip_force):
-
-    #     distance_vectors = positions[:,None] - positions
-        
-
-    #     tree = scipy_KDTree(positions)
-
-    #     foo = tree.sparse_distance_matrix(
-    #                         tree,
-    #                         max_distance=max_distance_factor*nuclei_size
-    #                     )
-
-    #     distance_norms = tree.sparse_distance_matrix(
-    #                         tree,
-    #                         max_distance=max_distance_factor*nuclei_size
-    #                     ).toarray()
-        
-    #     non_zero_elems = np.nonzero(distance_norms)
-
-    #     #lower_non_zero_elems = tuple(np.array([[i,j] for i,j in zip(*non_zero_elems) if i>j]).T)
-    #     # upper_non_zero_elems = lower_non_zero_elems[::-1]
-
-    #     unit_vectors = np.zeros(distance_vectors.shape)
-    #     unit_vectors[non_zero_elems] = distance_vectors[non_zero_elems] / distance_norms[non_zero_elems][:,None]
-
-
-    #     F_norm = np.zeros(shape=distance_norms.shape)
-
-    #     forces = self.__naive_potential_force(
-    #         r=distance_norms[non_zero_elems],
-    #         nuclei_size=nuclei_size,
-    #         eps=energy_potential,
-    #         wiggle_room=wiggle_room_factor*nuclei_size
-    #     )
-
-    #     F_norm[non_zero_elems] = forces
-
-    #     # forces = self.__naive_potential_force(
-    #     #     r=distance_norms[upper_non_zero_elems],
-    #     #     nuclei_size=nuclei_size,
-    #     #     eps=energy_potential,
-    #     #     wiggle_room=0*nuclei_size
-    #     # )
-
-    #     # F_norm[lower_non_zero_elems] = forces
-    #     # F_norm[upper_non_zero_elems] = forces
-
-    #     F = np.sum(F_norm[:,:,None] * unit_vectors, axis=0)
-
-    #     if not(clip_force is None):
-    #         total_force_norms = np.linalg.norm(F, axis=1)
-    #         mask = total_force_norms!=0
-            
-    #         F[mask] = F[mask]/total_force_norms[mask][:,None]
-
-    #         total_force_norms = np.clip(total_force_norms,-clip_force, clip_force)
-    #         F = F * total_force_norms[:,None]
-
-    #     return F
-
-
-    # def __attraction_repulsion_force_bak(self, positions, nuclei_size, max_distance_factor,
-    #                                  energy_potential, clip_force):
-
-    #     distance_vectors = positions[:,None] - positions
-
-    #     tree = scipy_KDTree(positions)
-
-    #     distance_norms = tree.sparse_distance_matrix(
-    #                         tree,
-    #                         max_distance=nuclei_size * max_distance_factor + self.debug_dist * 1000
-    #                     ).toarray()
-        
-    #     non_zero_elems = np.nonzero(distance_norms)
-
-    #     lower_non_zero_elems = list(np.array([[i,j] for i,j in zip(*non_zero_elems) if i>j]).T)
-    #     upper_non_zero_elems = lower_non_zero_elems[::-1]
-
-    #     unit_vectors = np.zeros(distance_vectors.shape)
-    #     unit_vectors[non_zero_elems] = distance_vectors[non_zero_elems] / distance_norms[non_zero_elems][:,None]
-
-    #     F_norm = np.zeros(shape=distance_norms.shape)
-        
-    #     # forces = self.__potential_force(
-    #     #     distance_norms[upper_non_zero_elems],
-    #     #     nuclei_size=nuclei_size,
-    #     #     eps=energy_potential
-    #     # )
-
-    #     forces = self.__naive_potential_force(
-    #         r=distance_norms[upper_non_zero_elems],
-    #         nuclei_size=nuclei_size,
-    #         eps=energy_potential,
-    #         wiggle_room=0*nuclei_size
-    #     )
-
-    #     F_norm[lower_non_zero_elems] = forces
-    #     F_norm[upper_non_zero_elems] = forces
-
-    #     F = np.sum(F_norm[:,:,None] * unit_vectors, axis=0)
-
-    #     if not(clip_force is None):
-    #         total_force_norms = np.linalg.norm(F, axis=1)
-            
-    #         F[total_force_norms!=0] = F[total_force_norms!=0]/total_force_norms[total_force_norms!=0][:,None]
-
-    #         total_force_norms = np.clip(total_force_norms,-clip_force, clip_force)
-    #         F = F*total_force_norms[:,None]
-
-    #     return F
-#     @numba.jit(nopython=True)#,nogil=True)#,parallel=True)
-# def individual_forces_from_positions(positions, 
-#                       forces_data,forces_indices,forces_indptr): 
-
-#     numRows_forces = positions.shape[0]    
-#     individual_forces = np.zeros(positions.shape)
-
-#     for i in range(numRows_forces):#numba.prange(numRows_forces):
-#         indiv_forces_i = np.zeros(positions.shape[1])       
-#         for dataIdx in range(forces_indptr[i],forces_indptr[i+1]):
-
-#             j = forces_indices[dataIdx]
-#             indiv_forces_i += forces_data[dataIdx]*(positions[j]-positions[i])
-
-#         individual_forces[i] = indiv_forces_i            
-
-#     return individual_forces
-
-# @numba.njit#('(int32[:],int32[:],float64[:,:],int32[:])')
-# def positions_to_vectors(rows, cols, positions, shape):
-   
-#     vectors = np.zeros(shape)
-#     for i,j in zip(rows,cols):
-#         vectors[i,j] = positions[i] - positions[j]
-#     return vectors
-    pass
 
