@@ -1,6 +1,25 @@
 import numpy as np
 
 
+
+def random_2d_unit_vectors(N_part):
+    phi = np.random.uniform(0,2*np.pi,size=N_part)
+    x = np.cos( phi )
+    y = np.sin( phi )
+
+    return np.array([x,y]).T
+
+def random_3d_unit_vectors(N_part):
+    phi = np.random.uniform(0,2*np.pi,size=N_part)
+    costheta = np.random.uniform(-1,1,size=N_part)
+
+    theta = np.arccos( costheta )
+    x = np.sin( theta ) * np.cos( phi )
+    y = np.sin( theta ) * np.sin( phi )
+    z = np.cos( theta )
+
+    return np.array([x,y,z]).T
+
 def make_bounding_box(bb_shape: tuple, bb_width: int = 1, 
                       world_array_shape: tuple = None,
                       top_left_corner_coords: tuple = None):
@@ -49,6 +68,10 @@ def make_bounding_box(bb_shape: tuple, bb_width: int = 1,
     
     
     return bounding_box
+
+
+def load_csv_coords(path_to_csv: str):
+    return np.loadtxt(fname=path_to_csv, delimiter=',')
     
 
 def repeat_along_t(array, repeat):

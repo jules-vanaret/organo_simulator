@@ -17,7 +17,7 @@ total_steps = 10000 # total number of simulation steps
 Nt = int(total_steps/skip)
 
 render = False # wether or not to add render (takes a looong time)
-Nx = 200 # length of the box in pixels for the rendering 
+Nx = 300 # length of the box in pixels for the rendering 
 n_rays = 32 # number of stardist rays used for rendering
 
 
@@ -72,14 +72,16 @@ for i in tqdm(range(total_steps)):
         data[int(i/skip)*len(time_pos):(int(i/skip)+1)*len(time_pos),:] = time_pos
         data_points[int(i/skip)] = positions
 
-        path2save = '/home/jvanaret/data/data_trackability_study/simulations/test'
-        savename = f'positions_{str(i).zfill(int(np.log10(total_steps))+1)}.csv'
+        # if i>3*skip:
 
-        np.savetxt(
-            f'{path2save}/{savename}',
-            positions,
-            delimiter=','
-        )
+        #     path2save = '/home/jvanaret/data/data_trackability_study/simulations/test_long/coords'
+        #     savename = f'positions_{str(i).zfill(int(np.log10(total_steps))+1)}.csv'
+
+        #     np.savetxt(
+        #         f'{path2save}/{savename}',
+        #         positions,
+        #         delimiter=','
+        #     )
 
 
 

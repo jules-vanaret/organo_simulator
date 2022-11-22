@@ -1,6 +1,7 @@
 import numpy as np
 import numba
 from scipy.spatial import KDTree as scipy_KDTree
+import organo_simulator.utils as simulator_utils
 
 @numba.jit(nopython=True)
 def drag_velocity_from_neighbors_with_confinement(velocities, positions,
@@ -276,7 +277,7 @@ class FastOverdampedSimulator:
         # )
         self.positions = self.positions + dt * velocities
 
-        self.positions = self.center_and_clip_positions(
+        self.positions = self.__center_and_clip_positions(
             self.positions,
             self.L
         )
@@ -292,35 +293,17 @@ class FastOverdampedSimulator:
         radius = equilibrium_radius / np.sqrt(2)
         radiuses = radius * np.power(np.random.uniform(0,1,size=(N_part,1)),1/d)
         if d==2:
-            positions = L + radiuses * self.__random_2d_unit_vectors(N_part)
+            positions = L + radiuses * simulator_utils.random_2d_unit_vectors(N_part)
         elif d==3:
             if initialisation == 'sausage':
                 positions = self.__initialize_as_sausage(N_part)
             else:
-                positions = L + radiuses * self.__random_3d_unit_vectors(N_part)
+                positions = L + radiuses * simulator_utils.random_3d_unit_vectors(N_part)
         
         return positions
 
     def __initialize_langevin_noise(self, sigma, N_part, d):
         return self.__langevin_noise(sigma=sigma, N_part=N_part, d=d)
-
-    def __random_2d_unit_vectors(self, N_part):
-        phi = np.random.uniform(0,2*np.pi,size=N_part)
-        x = np.cos( phi )
-        y = np.sin( phi )
-
-        return np.array([x,y]).T
-
-    def __random_3d_unit_vectors(self, N_part):
-        phi = np.random.uniform(0,2*np.pi,size=N_part)
-        costheta = np.random.uniform(-1,1,size=N_part)
-
-        theta = np.arccos( costheta )
-        x = np.sin( theta ) * np.cos( phi )
-        y = np.sin( theta ) * np.sin( phi )
-        z = np.cos( theta )
-
-        return np.array([x,y,z]).T
 
     def __initialize_as_sausage(self, N_part):
         
@@ -330,7 +313,7 @@ class FastOverdampedSimulator:
         
         y_positions = np.random.uniform(0,l,size=(N_part))
         radiuses = l/8 * np.power(np.random.uniform(0,1,size=(N_part,1)),1/2)
-        zx_positions = radiuses * self.__random_2d_unit_vectors(N_part)
+        zx_positions = radiuses * simulator_utils.random_2d_unit_vectors(N_part)
 
         positions = np.array([zx_positions[:,0], y_positions, zx_positions[:,1]]).T
 
@@ -380,7 +363,7 @@ class FastOverdampedSimulator:
     def __langevin_noise(self, sigma, N_part, d):
         return sigma * np.random.normal(size=(N_part, d))
 
-    def center_and_clip_positions(self, positions, L):
+    def __center_and_clip_positions(self, positions, L):
         average_positions = np.mean(positions, axis=0)
         positions = np.clip(L+(positions-average_positions), 0, (2-1e-3)*L)
 
