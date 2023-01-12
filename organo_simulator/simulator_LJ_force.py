@@ -131,8 +131,6 @@ def forces_numba_setup(parallel):
             indiv_forces_i = np.zeros(positions.shape[1])
             
             nuclei_size = nuclei_sizes[i,0]
-            wiggle_room = wiggle_rooms[i,0]
-            max_distance = max_distances[i,0]
             
             for dataIdx in range(dist_indptr[i],dist_indptr[i+1]):
                 # j is the index of a neighboring cell
