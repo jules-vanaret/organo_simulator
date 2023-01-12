@@ -3,11 +3,13 @@ import stardist
 from pyclesperanto_prototype import voronoi_labeling, select_device
 from skimage.util import random_noise
 from scipy.ndimage import gaussian_filter as scipy_gaussian
+from skimage.measure import regionprops
 
 
 class Renderer:
     def __init__(self, nuclei_sizes, N_part, n_rays, Nx, d, L, cell_to_nuc_ratio,
-                gaussian_blur_sigma, gaussian_noise_mean, gaussian_noise_sigma):
+                gaussian_blur_sigma, gaussian_noise_mean, gaussian_noise_sigma,
+                scale=None):
         
         if isinstance(nuclei_sizes, int):
             nuclei_sizes = nuclei_sizes * np.ones(shape=(N_part,1))
@@ -22,6 +24,10 @@ class Renderer:
         self.d = d
         self.L = L
         self.cell_to_nuc_ratio = cell_to_nuc_ratio
+
+        if scale is None:
+            scale = (1,)*d
+        self.scale = np.array(scale)
 
         if d==2:
             self.rendering_star_dist = lambda labels: stardist.geometry.geom2d.star_dist(labels, n_rays=n_rays, mode='opencl')
@@ -46,7 +52,7 @@ class Renderer:
         nuclei_sizes_pix = (self.nuclei_sizes*self.Nx/(2*self.L)).astype(int)
 
         prefactor_angles = np.pi if self.d==2 else 4/3*np.pi
-        target_volume_pix = prefactor_angles*np.power(nuclei_sizes_pix, self.d)
+        target_volume_pix = prefactor_angles*np.power(nuclei_sizes_pix, self.d)*self.cell_to_nuc_ratio
 
         prefactor_volume = prefactor_angles/self.n_rays
 
@@ -65,6 +71,8 @@ class Renderer:
         
         all_distances = all_distances_sd.copy() 
         all_distances = np.clip(all_distances * (0.5*self.cell_to_nuc_ratio),0,nuclei_sizes_pix) / (0.5*self.cell_to_nuc_ratio)
+        #all_distances = np.clip(all_distances ,0,nuclei_sizes_pix/0.4)*0.4
+
 
         problematic_distances_mask = np.less(all_distances, nuclei_sizes_pix)
         sum_prob_dist2 = np.sum(np.power(problematic_distances_mask*all_distances,self.d), axis=1)
@@ -86,6 +94,8 @@ class Renderer:
 
 
         all_distances = all_distances * self.cell_to_nuc_ratio
+        
+        
         #print(3)
         labels = self.rendering_polygons_to_label(
             all_distances,
@@ -95,35 +105,63 @@ class Renderer:
         #print(4)
         return labels
 
-    def make_realistic_data_from_labels(self, labels, debug_path=None):
-        
-        labels_mask = labels.astype(bool) 
+    def make_realistic_data_from_labels(self, labels, debug=False):
 
-        data = labels_mask*1.0 * 0.01
+        if debug:
+            import napari
+            viewer = napari.Viewer()
+        
+        labels_mask = labels.astype(bool)
+
+        props = regionprops(labels)
+
+        data = 0.005 * np.ones(labels.shape, dtype=float)
+        if debug: viewer.add_image(data, scale=self.scale)
+
+
+
+        for prop in props:
+            data[prop.slice][prop.image] = np.random.normal(loc=0.07, scale=0.03)
+        data = np.clip(data, 0,1)
+        # data = labels_mask*1.0 * 0.1+0.01
+        data = data + 0.005
+        if debug: viewer.add_image(data, scale=self.scale)
         
         # Salt & pepper noise
-        data = random_noise(data, mode='s&p', clip=False, amount=0.75)    
-        data[~labels_mask] = self.gaussian_noise_mean
+        # data = random_noise(data, mode='s&p', clip=False, amount=0.1)  
+        data_sp = random_noise(data, mode='s&p', clip=False, amount=0.1)  
+        if debug: viewer.add_image(data_sp*data*10, scale=self.scale, name='spec')
+        data = data + data_sp*data*10
+        data[~labels_mask] = 0.005
+        if debug: viewer.add_image(data, scale=self.scale, name='before')
 
-        # Gaussian blur
-        data = scipy_gaussian(data, sigma=self.gaussian_blur_sigma)
-
-        # Poisson noise
-        data = random_noise(data, mode='poisson', clip=False)
-        data = np.clip(data, 0,1)
+        #Gaussian blur
+        sigmas = [self.gaussian_blur_sigma/s for s in self.scale/self.scale.min()]
+        data = scipy_gaussian(data, sigma=sigmas, )
+        if debug: viewer.add_image(data, scale=self.scale,  name='after')
 
         # Gaussian noise
         data = random_noise(
             data,
             mode='gaussian',
-            mean=self.gaussian_noise_sigma,
+            mean=self.gaussian_noise_mean,
             var=self.gaussian_noise_sigma**2,
             clip=False
         )
         data = np.clip(data, 0,1)
+        if debug: viewer.add_image(data, scale=self.scale)
+        # data = np.clip(data, 0,1)
 
-        # Salt & pepper noise
-        data_sap = random_noise(data, mode='s&p', clip=False, amount=0.8)    
-        data[labels_mask] = data[labels_mask] + 0.3*data_sap[labels_mask]
+        # Poisson noise
+        data = random_noise(data, mode='poisson', clip=False)
+        if debug: viewer.add_image(data, scale=self.scale)
+        # data = np.clip(data, 0,1)
 
+
+        
+
+        # # Salt & pepper noise
+        # data_sap = random_noise(data, mode='s&p', clip=False, amount=0.8)    
+        # data[labels_mask] = data[labels_mask] + 0.1* 2*(data_sap[labels_mask]-1/2)
+        if debug: napari.run()
         return data

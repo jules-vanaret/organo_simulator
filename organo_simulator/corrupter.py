@@ -19,7 +19,7 @@ class SimulationCorrupter:
         N_FP = int(N_part * fp_rate)
 
         average_pos = np.mean(coords, axis=0)
-        typical_radius = np.max(np.linalg.norm(coords-average_pos, axis=1))
+        typical_radius = 3/4 * np.max(np.linalg.norm(coords-average_pos, axis=1))
         
         radiuses = typical_radius * np.power(np.random.uniform(0,1,size=(N_FP,1)),1/d)
         if d==2:
@@ -151,6 +151,8 @@ class SimulationCorrupter:
                     nuclei_sizes = nuclei_sizes[:,0] 
             
             split_dists = np.minimum(nearest_neighbors_dists, nuclei_sizes[split_inds]/2)
+
+        # print(np.mean(split_dists), np.std(split_dists))
 
         if d==2:
             split_polarities = simulator_utils.random_2d_unit_vectors(N_split)

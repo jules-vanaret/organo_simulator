@@ -17,19 +17,19 @@ files = os.listdir(path2coords)
 
 corrupter = SimulationCorrupter()
 
-# split_rates = np.linspace(0,0.2,5)
-split_rates = np.arange(0.0, 0.5, 0.05)
+# fp_rates = np.linspace(0,0.2,5)
+fp_rates = np.arange(0.0, 0.5, 0.05)
 
-for split_rate in split_rates:
+for fp_rate in fp_rates:
 
-    split_rate_str = f'{split_rate:.2f}'
+    fp_rate_str = f'{fp_rate:.2f}'
 
-    path2corrupted_coords = f'{path2data}/coords_split_{split_rate_str.replace(".","")}'
-    path2dicts = f'{path2data}/dicts_split_{split_rate_str.replace(".","")}'
+    path2corrupted_coords = f'{path2data}/coords_fp_{fp_rate_str.replace(".","")}'
+    path2dicts = f'{path2data}/dicts_fp_{fp_rate_str.replace(".","")}'
     
 
-    # os.mkdir(path2corrupted_coords)
-    # os.mkdir(path2dicts)
+    os.mkdir(path2corrupted_coords)
+    os.mkdir(path2dicts)
 
     for filename in files:
 
@@ -37,9 +37,9 @@ for split_rate in split_rates:
             path_to_csv=f'{path2coords}/{filename}'
         )
 
-        coords, dict_new_old = corrupter.add_split_to_coords(
+        coords, dict_new_old = corrupter.add_fp_to_coords(
             coords, 
-            split_rate=split_rate,
+            fp_rate=fp_rate,
             return_dict=True
         )
 
