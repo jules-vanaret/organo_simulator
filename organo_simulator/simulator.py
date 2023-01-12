@@ -8,7 +8,7 @@ import organo_simulator.utils as simulator_utils
 TODO:
     - implement parallel drag velocities
     - test if force symmetrization is faster
-    - change 'langevin' to 'random'
+    - change 'random' to 'random'
 
 """
 
@@ -225,7 +225,7 @@ class FastOverdampedSimulator:
             if D.ndim == 1:
                 D = D[:,None]
         self.D = D
-        self.sigma_langevin = np.sqrt(2*D)
+        self.sigma_random = np.sqrt(2*D)
 
         if isinstance(persistence_time, np.ndarray):
             if persistence_time.ndim == 1:
@@ -244,7 +244,7 @@ class FastOverdampedSimulator:
             numba.set_num_threads(2)
             
         self.positions = self.__initialize_positions(L, N_part, self.equilibrium_radius, d, initialisation)
-        self.langevin_force = self.__initialize_langevin_noise(self.sigma_langevin, N_part, d)
+        self.random_force = self.__initialize_random_noise(self.sigma_random, N_part, d)
         self.velocities = self.__initialize_velocities(
             self.positions,
             self.nuclei_sizes,
@@ -252,7 +252,7 @@ class FastOverdampedSimulator:
             self.max_distances,
             self.wiggle_rooms,
             self.energy_potential,
-            self.langevin_force
+            self.random_force
         )
 
         # foo = 'bar'
@@ -269,16 +269,16 @@ class FastOverdampedSimulator:
         self.t += dt
 
         ### Compute random forces
-        langevin_noise = self.__langevin_noise(
-            sigma=self.sigma_langevin, 
+        random_noise = self.__random_noise(
+            sigma=self.sigma_random, 
             N_part=self.N_part, 
             d=self.d
         )
-        ornstein_uhlenbeck_differential = (0 - self.langevin_force)/self.persistence_time * dt \
-                                        + langevin_noise * np.sqrt(dt) # this part is multiplied by sqrt(dt) as it is the differential
+        ornstein_uhlenbeck_differential = (0 - self.random_force)/self.persistence_time * dt \
+                                        + random_noise * np.sqrt(dt) # this part is multiplied by sqrt(dt) as it is the differential
                                                     # of a Wiener process whose variance is proportional to dt
                                                     # (Gillespie, PRE 95)
-        self.langevin_force = self.langevin_force + ornstein_uhlenbeck_differential
+        self.random_force = self.random_force + ornstein_uhlenbeck_differential
         ###
 
         ### First step of Heun's method
@@ -290,7 +290,7 @@ class FastOverdampedSimulator:
             wiggle_rooms=self.wiggle_rooms,
             energy_potential=self.energy_potential
         )
-        F = deterministic_forces + self.langevin_force 
+        F = deterministic_forces + self.random_force 
         dummy_velocities = F/self.viscosity
         dummy_velocities = velocities + drag_velocities_from_neighbors(
             self.velocities, # use velocities at previous time steps (see Ya||a)
@@ -311,7 +311,7 @@ class FastOverdampedSimulator:
             energy_potential=self.energy_potential
         )
         
-        F = deterministic_forces + self.langevin_force 
+        F = deterministic_forces + self.random_force 
         velocities = F/self.viscosity
         velocities = velocities + drag_velocities_from_neighbors(
             self.velocities,
@@ -341,7 +341,7 @@ class FastOverdampedSimulator:
         return positions
 
     def __initialize_velocities(self, positions, nuclei_sizes, max_overall_distance, max_distances, 
-                                wiggle_rooms, energy_potential, langevin_force):
+                                wiggle_rooms, energy_potential, random_force):
         """
         Initialize velocities from interaction and random forces only
         """
@@ -354,7 +354,7 @@ class FastOverdampedSimulator:
             wiggle_rooms=wiggle_rooms,
             energy_potential=energy_potential
         )
-        F = deterministic_forces + langevin_force 
+        F = deterministic_forces + random_force 
         velocities = F/self.viscosity
         # velocities = velocities + drag_velocities_from_neighbors(
         #     velocities,
@@ -364,8 +364,8 @@ class FastOverdampedSimulator:
         
         return velocities
 
-    def __initialize_langevin_noise(self, sigma, N_part, d):
-        return self.__langevin_noise(sigma=sigma, N_part=N_part, d=d)
+    def __initialize_random_noise(self, sigma, N_part, d):
+        return self.__random_noise(sigma=sigma, N_part=N_part, d=d)
 
     def __initialize_as_sausage(self, N_part):
         
@@ -409,7 +409,7 @@ class FastOverdampedSimulator:
 
         return F, sparse_distance_norms
 
-    def __langevin_noise(self, sigma, N_part, d):
+    def __random_noise(self, sigma, N_part, d):
         return sigma * np.random.normal(size=(N_part, d))
 
     def __center_and_clip_positions(self, positions, L):
