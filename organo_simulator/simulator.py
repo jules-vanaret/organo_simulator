@@ -3,19 +3,8 @@ import numba
 from scipy.spatial import KDTree as scipy_KDTree
 import organo_simulator.utils as simulator_utils
 
-
-"""
-TODO:
-    - implement parallel drag velocities
-    - test if force symmetrization is faster
-
-"""
-
-
-
-
 @numba.jit(nopython=True)
-def drag_velocities_from_neighbors(velocities, 
+def drag_velocity_from_neighbors(velocities, 
                             dist_indices,dist_indptr):
     N_part = velocities.shape[0]    
     
@@ -40,9 +29,10 @@ def drag_velocities_from_neighbors(velocities,
 
 
 @numba.jit(nopython=True)
-def yalla_force_numba(r, nuclei_size, wiggle_room, 
-                        neighbor_size, neighbor_room, 
-                        max_distance, eps):
+def yalla_force_numba_corrected(r, 
+    nuclei_size, wiggle_room, 
+    neighbor_size, neighbor_room, 
+    max_distance, eps):
         """
         See 'ya||a: GPU-Powered Spheroid Models for Mesenchyme
         and Epithelium, Sharpe et al (2019)'
@@ -51,7 +41,7 @@ def yalla_force_numba(r, nuclei_size, wiggle_room,
         if r>max_distance:
             return 0
 
-        nuc_nuc_equilibrium_distance = nuclei_size + neighbor_size
+        nuc_nuc_equilibrium_distance = nuclei_size+neighbor_size
         sum_wiggle_rooms = wiggle_room + neighbor_room
 
         repulsion = np.maximum(nuc_nuc_equilibrium_distance - r,0)
@@ -62,11 +52,30 @@ def yalla_force_numba(r, nuclei_size, wiggle_room,
         # compute the distance again 
         return eps * (attraction - 2 * repulsion)/r
 
+@numba.jit(nopython=True)
+def yalla_force_numba(r, nuclei_size, wiggle_room, max_distance, eps):
+        """
+        See 'ya||a: GPU-Powered Spheroid Models for Mesenchyme
+        and Epithelium, Sharpe et al (2019)'
+        """
+
+        if r>max_distance:
+            return 0
+
+        nuclei_diameter = 2 * nuclei_size
+
+        repulsion = np.maximum(nuclei_diameter - r,0)
+        attraction = np.maximum(r - (nuclei_diameter + 2*wiggle_room),0)
+
+        # divide by r so that (positions[j]-positions[i]) can be 
+        # directly multiplied by the magnitude without having to
+        # compute the distance again 
+        return eps * (attraction - 4 * repulsion)/r
 
 def forces_numba_setup(parallel):
     
     @numba.jit(nopython=True,parallel=parallel)
-    def individual_att_rep_forces(positions, 
+    def individual_forces_from_scratch(positions, 
                         dist_data,dist_indices,dist_indptr,
                         nuclei_sizes, eps, wiggle_rooms, max_distances):
 
@@ -85,7 +94,14 @@ def forces_numba_setup(parallel):
                 # j is the index of a neighboring cell
                 j = dist_indices[dataIdx]
 
-                force_magnitude = yalla_force_numba(
+                # force_magnitude = yalla_force_numba(
+                #     dist_data[dataIdx],
+                #     nuclei_size,
+                #     wiggle_room,
+                #     max_distance,
+                #     eps
+                # )
+                force_magnitude = yalla_force_numba_corrected(
                     r=dist_data[dataIdx],
                     nuclei_size=nuclei_size,
                     wiggle_room=wiggle_room,
@@ -94,7 +110,7 @@ def forces_numba_setup(parallel):
                     max_distance=max_distance,
                     eps=eps
                 )
-                dist_vector_ij = positions[j]-positions[i]
+                dist_vector_ij = (positions[j]-positions[i])
 
                 indiv_forces_i += force_magnitude*dist_vector_ij
 
@@ -102,7 +118,8 @@ def forces_numba_setup(parallel):
 
         return individual_forces
     
-    return individual_att_rep_forces
+    return individual_forces_from_scratch
+
 
 
 
@@ -113,7 +130,6 @@ class FastOverdampedSimulator:
                  initialisation=None,
                  parallel=False):
 
-        self.t = 0
         self.Nx = Nx
         self.d = d
         self.N_part = N_part
@@ -127,8 +143,8 @@ class FastOverdampedSimulator:
         self.max_nuclei_size = np.max(nuclei_sizes)
         self.max_overall_distance = self.max_nuclei_size * max_distance_factor
 
-        packing_fraction = 0.906 if d==2 else 0.740 # hexagonal lattice packing fraction
-        self.equilibrium_radius = np.mean(nuclei_sizes) * np.power(N_part/packing_fraction,1/d)
+        rho = 0.906 if d==2 else 0.740
+        self.equilibrium_radius = np.mean(nuclei_sizes) * np.power(N_part/rho,1/d)
         if L is None:
             # Use hexagonal lattice packing fraction to infer
             # the total radius at equlibrium
@@ -145,7 +161,7 @@ class FastOverdampedSimulator:
             if D.ndim == 1:
                 D = D[:,None]
         self.D = D
-        self.sigma_random = np.sqrt(2*D)
+        self.sigma_langevin = np.sqrt(2*D)
 
         if isinstance(persistence_time, np.ndarray):
             if persistence_time.ndim == 1:
@@ -158,51 +174,30 @@ class FastOverdampedSimulator:
         self.wiggle_rooms = wiggle_room_factor * self.nuclei_sizes
         self.wiggle_room_factor = wiggle_room_factor
 
-        self.individual_att_rep_forces = forces_numba_setup(parallel)
+        self.positions = self.__initialize_positions(L, N_part, self.equilibrium_radius, d, initialisation)
+        self.langevin_force = self.__initialize_langevin_noise(self.sigma_langevin, N_part, d)
+
+        self.individual_forces_from_scratch = forces_numba_setup(parallel)
+
+        self.t = 0
 
         if parallel:
             numba.set_num_threads(2)
-            
-        self.positions = self.__initialize_positions(L, N_part, self.equilibrium_radius, d, initialisation)
-        self.random_force = self.__initialize_random_noise(self.sigma_random, N_part, d)
-        self.velocities = self.__initialize_velocities(
-            self.positions,
-            self.nuclei_sizes,
-            self.max_overall_distance,
-            self.max_distances,
-            self.wiggle_rooms,
-            self.energy_potential,
-            self.random_force
-        )
-
         # foo = 'bar'
 
     def update_dynamics(self, dt):
-        """
-        Random forces are simulated by a vector Ornstein-Uhlenbeck process
-        (see Gillespie, PRE 1995 for numerical integration)
-
-        For integration of the equation of motion, we use Heun's method for
-        SDEs (see Garcia-Alvarez, 2011)
-        """
 
         self.t += dt
 
-        ### Compute random forces
-        random_noise = self.__random_noise(
-            sigma=self.sigma_random, 
-            N_part=self.N_part, 
-            d=self.d
-        )
-        ornstein_uhlenbeck_differential = (0 - self.random_force)/self.persistence_time * dt \
-                                        + random_noise * np.sqrt(dt) # this part is multiplied by sqrt(dt) as it is the differential
-                                                    # of a Wiener process whose variance is proportional to dt
-                                                    # (Gillespie, PRE 95)
-        self.random_force = self.random_force + ornstein_uhlenbeck_differential
-        ###
-
-        ### First step of Heun's method
-        deterministic_forces, sparse_distance_norms = self.__attraction_repulsion_force(
+        ornstein_uhlenbeck_process = (0 - self.langevin_force)/self.persistence_time \
+                                   + self.__langevin_noise(
+                                        sigma=self.sigma_langevin, 
+                                        N_part=self.N_part, 
+                                        d=self.d
+                                    )
+        self.langevin_force = self.langevin_force + dt * ornstein_uhlenbeck_process
+        
+        deterministic_forces,sparse_distance_norms = self.__attraction_repulsion_force(
             positions=self.positions,
             nuclei_sizes=self.nuclei_sizes,
             max_overall_distance=self.max_overall_distance,
@@ -210,20 +205,17 @@ class FastOverdampedSimulator:
             wiggle_rooms=self.wiggle_rooms,
             energy_potential=self.energy_potential
         )
-        F = deterministic_forces + self.random_force 
-        dummy_velocities = F/self.viscosity
-        dummy_velocities = velocities + drag_velocities_from_neighbors(
-            self.velocities, # use velocities at previous time steps (see Ya||a)
+        F = deterministic_forces + self.langevin_force 
+        velocities = F/self.viscosity
+        velocities = velocities + drag_velocity_from_neighbors(
+            velocities,
             sparse_distance_norms.indices,
             sparse_distance_norms.indptr
         )
-        self.velocities = dummy_velocities # should we update velocities at this point ???
         
-        dummy_positions = self.positions + dt * dummy_velocities
-        ###
-        
-        ### Second step of Heun's method
-        deterministic_forces, sparse_distance_norms = self.__attraction_repulsion_force(
+        # Heun's method
+        dummy_positions = self.positions + dt * velocities
+        deterministic_forces_dummy,sparse_distance_norms = self.__attraction_repulsion_force(
             positions=dummy_positions,
             nuclei_sizes=self.nuclei_sizes,
             max_overall_distance=self.max_overall_distance,
@@ -231,22 +223,38 @@ class FastOverdampedSimulator:
             wiggle_rooms=self.wiggle_rooms,
             energy_potential=self.energy_potential
         )
+        deterministic_forces  = (deterministic_forces + deterministic_forces_dummy)/2
+
         
-        F = deterministic_forces + self.random_force 
+        F = deterministic_forces + self.langevin_force 
         velocities = F/self.viscosity
-        velocities = velocities + drag_velocities_from_neighbors(
-            self.velocities,
+        velocities = velocities + drag_velocity_from_neighbors(
+            velocities,
             sparse_distance_norms.indices,
             sparse_distance_norms.indptr
         )
-        
-        self.positions = self.positions + dt * 0.5 * (dummy_velocities + velocities)
-        ###
+        # velocities = velocities + drag_velocity_from_neighbors_with_confinement(
+        #     velocities, 
+        #     self.positions,
+        #     sparse_distance_norms.indices,
+        #     sparse_distance_norms.indptr,
+        #     k=0.1,
+        #     L=self.L,
+        #     R_eq=self.equilibrium_radius
+        # )
+        self.positions = self.positions + dt * velocities
 
         self.positions = self.__center_and_clip_positions(
             self.positions,
             self.L
         )
+
+
+    def dump_array(self):
+        pass
+
+    def dump_coordinates(self):
+        return self.positions
     
     def __initialize_positions(self, L, N_part, equilibrium_radius, d, initialisation):
         radius = equilibrium_radius / np.sqrt(2)
@@ -261,32 +269,8 @@ class FastOverdampedSimulator:
         
         return positions
 
-    def __initialize_velocities(self, positions, nuclei_sizes, max_overall_distance, max_distances, 
-                                wiggle_rooms, energy_potential, random_force):
-        """
-        Initialize velocities from interaction and random forces only
-        """
-        
-        deterministic_forces, sparse_distance_norms = self.__attraction_repulsion_force(
-            positions=positions,
-            nuclei_sizes=nuclei_sizes,
-            max_overall_distance=max_overall_distance,
-            max_distances=max_distances,
-            wiggle_rooms=wiggle_rooms,
-            energy_potential=energy_potential
-        )
-        F = deterministic_forces + random_force 
-        velocities = F/self.viscosity
-        # velocities = velocities + drag_velocities_from_neighbors(
-        #     velocities,
-        #     sparse_distance_norms.indices,
-        #     sparse_distance_norms.indptr
-        # )
-        
-        return velocities
-
-    def __initialize_random_noise(self, sigma, N_part, d):
-        return self.__random_noise(sigma=sigma, N_part=N_part, d=d)
+    def __initialize_langevin_noise(self, sigma, N_part, d):
+        return self.__langevin_noise(sigma=sigma, N_part=N_part, d=d)
 
     def __initialize_as_sausage(self, N_part):
         
@@ -314,10 +298,9 @@ class FastOverdampedSimulator:
                             output_type='coo_matrix'
                         ).tocsr()
 
-        # remove zeros on the diagonal
         sparse_distance_norms.eliminate_zeros()
 
-        F = self.individual_att_rep_forces(
+        F = self.individual_forces_from_scratch(
             positions=positions,
             dist_data=sparse_distance_norms.data,
             dist_indices=sparse_distance_norms.indices,
@@ -330,7 +313,21 @@ class FastOverdampedSimulator:
 
         return F, sparse_distance_norms
 
-    def __random_noise(self, sigma, N_part, d):
+    def __potential_force(self, r, nuclei_size, eps, r_bar=2):
+
+        nuclei_diameter = 2 * nuclei_size
+
+        r_condition1 = r < nuclei_diameter * 2**(1/6)
+        r_condition2 = r > nuclei_diameter * r_bar
+
+        R = r - (r_bar - 2**(1/6)) * nuclei_diameter
+
+        value_1 = 4 * eps * (-12 * (nuclei_diameter**12/np.power(r,13)) + 6 * (nuclei_diameter**6/np.power(r,7)))
+        value_2 = 4 * eps * (-12 * (nuclei_diameter**12/np.power(R,13)) + 6 * (nuclei_diameter**6/np.power(R,7)))
+
+        return value_1 * r_condition1 + value_2 * r_condition2
+
+    def __langevin_noise(self, sigma, N_part, d):
         return sigma * np.random.normal(size=(N_part, d))
 
     def __center_and_clip_positions(self, positions, L):
@@ -338,13 +335,3 @@ class FastOverdampedSimulator:
         positions = np.clip(L+(positions-average_positions), 0, (2-1e-3)*L)
 
         return positions
-
-    def dump_array(self):
-        raise NotImplementedError
-
-    def dump_coordinates(self):
-        return self.positions
-
-
-
-

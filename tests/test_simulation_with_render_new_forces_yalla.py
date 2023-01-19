@@ -1,6 +1,6 @@
 import numpy as np
 from tqdm import tqdm
-from organo_simulator.simulator import FastOverdampedSimulator
+from organo_simulator.simulator_yalla_force import FastOverdampedSimulator
 from organo_simulator.renderer import Renderer
 from organo_simulator.utils import make_bounding_box
 import napari
@@ -8,12 +8,12 @@ import napari
 
 np.random.seed(2022)
 
-d=3 # dimension of simulation
-N_part = 400 # number of particles
+d=2 # dimension of simulation
+N_part = 7 # number of particles
 average_nuclei_size=8 # in physical units
 
-skip=2000
-total_steps = 50000 # total number of simulation steps
+skip=100
+total_steps = 2000 # total number of simulation steps
 Nt = int(total_steps/skip)
 
 render = False # wether or not to add render (takes a looong time)
@@ -37,8 +37,8 @@ N_fast = int(0.05*N_part)
 # persistence times (in physical units) for the OU process
 persistence_times   = np.array([100 ]*(N_part-N_fast) + [100]*N_fast, dtype=float)
 viscosities         = np.array([1000]*(N_part-N_fast) + [1000]*N_fast, dtype=float)
-Ds                  = np.array([0.01]*(N_part-N_fast) + [0.01]*N_fast, dtype=float) # diffusion coefficients
-
+#Ds                  = np.array([0.01]*(N_part-N_fast) + [0.01]*N_fast, dtype=float) # diffusion coefficients
+Ds                  = np.array([0]*(N_part-N_fast) + [0]*N_fast, dtype=float)
 
 
 simulator = FastOverdampedSimulator(
@@ -51,10 +51,9 @@ simulator = FastOverdampedSimulator(
     D=Ds,
     persistence_time=persistence_times,
     energy_potential=1,
-    max_distance_factor=2/0.71, # times nuclei size
+    max_distance_factor=2/0.8,#/0.71, # times nuclei size
     wiggle_room_factor=0.0, # times nuclei size
-    parallel=True,
-    initialisation='sausage'
+    parallel=True
 )
 
 
@@ -64,7 +63,7 @@ data_points=np.empty((Nt,N_part,d))
 
 
 for i in tqdm(range(total_steps)):
-    simulator.update_dynamics(dt=1)
+    simulator.update_dynamics(dt=0.1)
 
     if i%skip==0:
         positions = simulator.dump_coordinates()
@@ -111,9 +110,6 @@ for t in tqdm(range(int(max(data[:,0]))+1)):
     
     data_fast[t*N_fast:(t+1)*N_fast,:] = \
         data[t*N_part + N_part-N_fast:(t+1)*N_part,:]
-
-
-
 
 
 viewer = napari.Viewer(ndisplay=d)

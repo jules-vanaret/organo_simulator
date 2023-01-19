@@ -53,29 +53,7 @@ ax = fig.add_subplot(111)
 
 
 
-#voronoi_plot_2d(voronoi,ax=ax)
 
-# for i,point in enumerate(points):
-
-#     regions = voronoi.regions[
-#                 voronoi.point_region[i]
-#             ]
-
-#     if (not (-1 in regions)) and (len(regions)>3) : 
-
-#         vertices = voronoi.vertices[
-#                         regions
-#                     ]
-
-#         dims, vecs = fast_pca(vertices, point, 2)
-
-#         angle = np.arctan(vecs[0][0]/vecs[0][1]) * 180/np.pi
-        
-#         ellipse = Ellipse(
-#             xy=point,width=dims[1], height=dims[0],angle=angle 
-#         )
-#         # print(fast_pca(vertices, 2)[0])
-#         ax.add_patch(ellipse)
 
 for i,point in enumerate(points):
 
