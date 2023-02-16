@@ -13,7 +13,7 @@ N_part = 400 # number of particles
 average_nuclei_size=8 # in physical units
 
 skip=1000
-total_steps = 10000 # total number of simulation steps
+total_steps = 100000 # total number of simulation steps
 Nt = int(total_steps/skip)
 
 render = False # wether or not to add render (takes a looong time)

@@ -12,13 +12,13 @@ import matplotlib.pyplot as plt
 
 np.random.seed(2022)
 
-d=2 # dimension of simulation
-N_part = 300 # number of particles
+d=3 # dimension of simulation
+N_part = 1000 # number of particles
 average_nuclei_size=8 # in physical units
 
-skip=1
+skip=100
 dt = 0.1
-total_steps = 1000 # total number of simulation steps
+total_steps = 10000 # total number of simulation steps
 Nt = int(total_steps/skip)
 
 render = False # wether or not to add render (takes a looong time)
@@ -42,7 +42,7 @@ N_fast = int(0.0*N_part)
 persistence_times   = np.array([10]*(N_part-N_fast) + [10]*N_fast, dtype=float)
 viscosities         = np.array([1.0]*(N_part-N_fast) + [1.0]*N_fast, dtype=float)
 # Ds                  = np.array([0.01]*(N_part-N_fast) + [0.01]*N_fast, dtype=float) # diffusion coefficients
-Ds                  = np.array([0.0]*(N_part-N_fast) + [0.0]*N_fast, dtype=float) # diffusion coefficients
+Ds                  = np.array([0.001]*(N_part-N_fast) + [0.001]*N_fast, dtype=float) # diffusion coefficients
 
 
 simulator = FastOverdampedSimulator(
@@ -109,15 +109,15 @@ for i in tqdm(range(total_steps)):
 
     simulator.update_dynamics(dt=dt)
 
-    drag_velocities, determisitic_velocities, random_velocities = simulator.dump_velocities()
+    # drag_velocities, determisitic_velocities, random_velocities = simulator.dump_velocities()
 
-    drag_norm.append(np.linalg.norm(drag_velocities, axis=1).mean())
-    det_norm.append(np.linalg.norm(determisitic_velocities, axis=1).mean())
-    rand_norm.append(np.linalg.norm(random_velocities, axis=1).mean())
+    # drag_norm.append(np.linalg.norm(drag_velocities, axis=1).mean())
+    # det_norm.append(np.linalg.norm(determisitic_velocities, axis=1).mean())
+    # rand_norm.append(np.linalg.norm(random_velocities, axis=1).mean())
 
-    drag_mean.append(np.linalg.norm(drag_velocities.mean(axis=0)))
-    det_mean.append(np.linalg.norm(determisitic_velocities.mean(axis=0)))
-    rand_mean.append(np.linalg.norm(random_velocities.mean(axis=0)))
+    # drag_mean.append(np.linalg.norm(drag_velocities.mean(axis=0)))
+    # det_mean.append(np.linalg.norm(determisitic_velocities.mean(axis=0)))
+    # rand_mean.append(np.linalg.norm(random_velocities.mean(axis=0)))
 
     # tree = KDTree(positions)
     # dists = tree.query(positions,k=3)[0][:,2]
@@ -136,25 +136,25 @@ for i in tqdm(range(total_steps)):
 # dists = tree.query(data_points[-1],k=2)[0][:,1]
 # plt.hist(dists,bins=50,alpha=0.5)
 
-plt.figure()
-plt.title('Norm')
-plt.plot(drag_norm, 'o')
-plt.plot(det_norm, 'o')
-plt.plot(rand_norm, 'o')
-
-plt.figure()
-plt.title('Mean')
-plt.plot(drag_mean, 'o')
-plt.plot(det_mean, 'o')
-plt.plot(rand_mean, 'o')
+# plt.figure()
+# plt.title('Norm')
+# plt.plot(drag_norm, 'o')
+# plt.plot(det_norm, 'o')
+# plt.plot(rand_norm, 'o')
 
 # plt.figure()
-# plt.plot([elem[0] for elem in dists_list])
-# plt.plot([elem[1] for elem in dists_list])
-# plt.plot([elem[2] for elem in dists_list])
+# plt.title('Mean')
+# plt.plot(drag_mean, 'o')
+# plt.plot(det_mean, 'o')
+# plt.plot(rand_mean, 'o')
+
+# # plt.figure()
+# # plt.plot([elem[0] for elem in dists_list])
+# # plt.plot([elem[1] for elem in dists_list])
+# # plt.plot([elem[2] for elem in dists_list])
 
 
-plt.show()
+# plt.show()
 
 
 
