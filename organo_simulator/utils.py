@@ -1,4 +1,8 @@
 import numpy as np
+import shutil
+import os
+import glob
+import tqdm
 
 
 
@@ -76,6 +80,19 @@ def load_csv_coords(path_to_csv: str):
 
 def repeat_along_t(array, repeat):
     return np.stack((array,) * repeat, axis=0)
+
+def delete_content_of_dir(path_to_dir: str, content_type: str = ''):
+
+    files = glob.glob(f'{path_to_dir}/*{content_type}')
+    
+    print(f'Deleting content of folder {path_to_dir}')
+    if len(files)>0:
+    
+        for f in tqdm(files):
+            try:
+                os.remove(f)
+            except IsADirectoryError:
+                shutil.rmtree(f)
 
 
 if __name__ == '__main__':
