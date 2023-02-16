@@ -47,7 +47,7 @@ gt_tracks = sorted(gt_tracks, key=lambda l: l[0])
 # )
 
 total_time = len(np.unique(np.array(gt_tracks)[:,1]))
-roi_fringes=(15,15,15)
+roi_fringes=(100,100,100)#(15,15,15)
 list_of_center_inds = [150,150,150]
 
 utracks = Tracks().from_napari_tracks(napari_tracks=gt_tracks)
@@ -71,11 +71,11 @@ renderer.orthorender_dynROI(
 
 path2data = '/home/jvanaret/data/data_trackability_study/simulations/test_long/'
 
-fp_rates_str = [str(elem).zfill(3) for elem in np.arange(45,50,5)]
+fp_rates_str = [str(elem).zfill(3) for elem in np.arange(5,10,5)] # np.arange(45,50,5)]
 
 for fp_rate in fp_rates_str:
 
-    name = f'coords_fp_{fp_rate}'
+    name = f'coords_fp_{fp_rate}_0'
 
     all_points = []
     all_facecolors = []
@@ -94,18 +94,6 @@ for fp_rate in fp_rates_str:
         )
         list_new_to_old = [[int(d['new']), d['old']] for d in raw_dict]
 
-        # for coord, mapping in zip(coords, list_new_to_old):
-            
-        #     all_points.append([ind_t,*coord])
-
-        #     try:
-        #         _ = int(mapping[1])
-        #         # all_facecolors.append('green')
-        #         all_facecolors.append([0,1,0,1])
-        #     except ValueError:
-        #         # all_facecolors.append('red')
-        #         all_facecolors.append([1,0,0,1])
-
         for mapping in list_new_to_old:
             
             all_points.append([ind_t,*coords[mapping[0]]])
@@ -123,8 +111,8 @@ for fp_rate in fp_rates_str:
 
     utracks = Tracks()
     property_trackability = utracks.load_utrack3d_json(
-        path_to_json=f'/home/jvanaret/data/data_trackability_study/utrack/simulations/test_long/{name}/tracks.json',
-        path_to_trackability_json=f'/home/jvanaret/data/data_trackability_study/utrack/simulations/test_long/{name}/trackability.json',
+        path_to_json=f'/home/jvanaret/data/data_trackability_study/utrack/simulations/all_test_long_SR10/{name}/tracks.json',
+        path_to_trackability_json=f'/home/jvanaret/data/data_trackability_study/utrack/simulations/all_test_long_SR10/{name}/trackability.json',
         scale=scale, # min/frame, um/pix, um/pix, um/pix
     )
 
@@ -142,7 +130,7 @@ for fp_rate in fp_rates_str:
 
     total_time = len(np.unique(np.array(utracks_napari)[:,1]))
 
-    roi_fringes=(15,15,15)
+    roi_fringes=(100,100,100)#(15,15,15)
     list_of_center_inds = [150,150,150]
 
 
