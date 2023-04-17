@@ -8,7 +8,7 @@ import napari
 
 np.random.seed(2022)
 
-d=3 # dimension of simulation
+d=2 # dimension of simulation
 N_part = 200 # number of particles
 average_nuclei_size=8 # in physical units
 
@@ -33,9 +33,9 @@ viscosities = np.array([1000]*(N_part-N_fast) + [1000]*N_fast)
 Ds = np.array([1.0]*(N_part-N_fast) + [1.0]*N_fast) # diffusion coefficients
 
 
-render = True # wether or not to add render (takes a looong time)
+# render = False # wether or not to add render (takes a looong time)
 Nx = 200 # length of the box in pixels for the rendering 
-n_rays=32 # number of stardist rays used for rendering
+# n_rays=32 # number of stardist rays used for rendering
 
 
 
@@ -56,7 +56,7 @@ simulator = FastOverdampedSimulator(
 
 
 skip=100
-total_steps = 200 # total number of simulation steps
+total_steps = 10000 # total number of simulation steps
 Nt = int(total_steps/skip)
 
 
@@ -94,32 +94,32 @@ for t in tqdm(range(int(max(data[:,0]))+1)):
 
 
 
-if render:
+# if render:
 
-    labels=np.empty(shape=((Nt,)+(Nx,)*d), dtype=int)
-    voronoi_labels = np.empty(shape=((Nt,)+(Nx,)*d), dtype=int)
-    # data = np.empty(shape=((Nt,)+(Nx,)*d), dtype=float)
+#     labels=np.empty(shape=((Nt,)+(Nx,)*d), dtype=int)
+#     voronoi_labels = np.empty(shape=((Nt,)+(Nx,)*d), dtype=int)
+#     # data = np.empty(shape=((Nt,)+(Nx,)*d), dtype=float)
 
-    renderer = Renderer(
-        nuclei_sizes=nuclei_sizes,
-        N_part=N_part,
-        n_rays=n_rays,
-        Nx=Nx,
-        d=d,
-        L=simulator.L,
-        gaussian_blur_sigma=1,
-        gaussian_noise_mean=0.04,
-        gaussian_noise_sigma=0.04
-    )
+#     renderer = Renderer(
+#         nuclei_sizes=nuclei_sizes,
+#         N_part=N_part,
+#         n_rays=n_rays,
+#         Nx=Nx,
+#         d=d,
+#         L=simulator.L,
+#         gaussian_blur_sigma=1,
+#         gaussian_noise_mean=0.04,
+#         gaussian_noise_sigma=0.04
+#     )
 
-    render_data = np.empty(shape=((Nt,)+(Nx,)*d), dtype=float)
+#     #render_data = np.empty(shape=((Nt,)+(Nx,)*d), dtype=float)
 
-    for ind_t,points in enumerate(tqdm(data_points)):
+#     for ind_t,points in enumerate(tqdm(data_points)):
 
-        labels_t = renderer.make_labels_from_points(points=points)
+#         labels_t = renderer.make_labels_from_points(points=points)
 
-        labels[ind_t] = labels_t
-        render_data[ind_t] = renderer.make_realistic_data_from_labels(labels_t)
+#         labels[ind_t] = labels_t
+#         #render_data[ind_t] = renderer.make_realistic_data_from_labels(labels_t)
 
 
 
@@ -137,10 +137,10 @@ viewer.add_points(data=data,      size=3, scale=(1,)+(Nx/(2*simulator.L),)*d)
 viewer.add_points(data=data_slow, size=4,face_color='blue', scale=(1,)+(Nx/(2*simulator.L),)*d)
 viewer.add_points(data=data_fast, size=4,face_color='red', scale=(1,)+(Nx/(2*simulator.L),)*d)
 
-if render:
-    viewer.add_labels(labels)
-    viewer.add_image(render_data)
-    viewer.add_labels(voronoi_labels, visible=False)
+# if render:
+#     viewer.add_labels(labels)
+#     viewer.add_image(render_data)
+#     viewer.add_labels(voronoi_labels, visible=False)
 
 
 bb = make_bounding_box(bb_shape=(Nx,)*d)

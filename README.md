@@ -13,10 +13,7 @@ This repository is composed of :
 ## Installation
 
 Package that should be installed manually:
-* pyclesperanto
 * numba
-* stardist
-* skimage
 * napari
 * tqdm
 

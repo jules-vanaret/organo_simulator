@@ -50,7 +50,7 @@ total_time = len(np.unique(np.array(gt_tracks)[:,1]))
 roi_fringes=(100,100,100)#(15,15,15)
 list_of_center_inds = [150,150,150]
 
-utracks = Tracks().from_napari_tracks(napari_tracks=gt_tracks)
+utracks = Tracks().load_napari_tracks(napari_tracks=gt_tracks)
 
 dynROI = DynROI().from_coords(
     list_of_tinds=range(total_time),

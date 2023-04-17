@@ -8,7 +8,7 @@ from itertools import product
 """
 TODO:
     - test if force symmetrization is faster
-"""
+""" 
 
 
 
@@ -185,7 +185,7 @@ class FastOverdampedSimulator:
         self.individual_att_rep_forces = forces_numba_setup(parallel)
 
         if parallel:
-            numba.set_num_threads(3)
+            numba.set_num_threads(2)
             
         self.positions = self.__initialize_positions(L, N_part, self.equilibrium_radius, d, initialization)
         self.random_force = self.__initialize_random_noise(self.sigma_random, N_part, d)
@@ -314,7 +314,7 @@ class FastOverdampedSimulator:
         Initialize particles positions like a cylinder with 
         hexagonal packing + a bit of noise
         """
-        side = int(np.ceil((2**(d-1)*N_part)**(1/d)))
+        side = int(np.ceil((2**(d-1)*N_part)**(1/d)))+1
 
         positions = []
 
@@ -344,7 +344,7 @@ class FastOverdampedSimulator:
         
         positions = np.array(positions).astype(float)[:N_part]
 
-        
+        assert len(positions) == N_part
         
         noise = 0.25 * (np.random.rand(*positions.shape)-0.5)
 
