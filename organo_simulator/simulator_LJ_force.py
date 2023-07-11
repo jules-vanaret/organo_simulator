@@ -137,7 +137,7 @@ class FastOverdampedSimulator:
     def __init__(self, L, Nx, d, N_part, nuclei_sizes, viscosity, 
                  D, persistence_time, energy_potential,
                  initialization=None,
-                 parallel=False):
+                 parallel=False, flow_field=None):
 
         self.t = 0
         self.Nx = Nx
@@ -162,6 +162,7 @@ class FastOverdampedSimulator:
             # the total radius at equlibrium
             L = 2 * self.equilibrium_radius
         self.L = L
+        print(f'Box size: {self.L:.2f}')
 
 
         if isinstance(viscosity, np.ndarray):
@@ -196,6 +197,8 @@ class FastOverdampedSimulator:
             self.energy_potential,
             self.random_force
         )
+
+        self.flow_field = flow_field
 
         # foo = 'bar'
 
@@ -240,7 +243,8 @@ class FastOverdampedSimulator:
             sparse_distance_norms.indptr
         ) *0.9
         dummy_velocities = dummy_velocities + drag_velocities
-        
+        # if self.flow_field:
+        #     dummy_velocities = dummy_velocities + self.__flow_field(self.positions)
         dummy_positions = self.positions + dt * dummy_velocities
         ###
 
@@ -263,6 +267,10 @@ class FastOverdampedSimulator:
             sparse_distance_norms.indptr
         ) *0.9
         velocities = velocities + drag_velocities
+
+        if self.flow_field:
+            velocities = velocities + self.__flow_field(dummy_positions)
+
         self.velocities = velocities
         self.positions = self.positions + dt * 0.5 * (dummy_velocities + velocities)
         ###
@@ -346,9 +354,10 @@ class FastOverdampedSimulator:
 
         assert len(positions) == N_part
         
-        noise = 0.25 * (np.random.rand(*positions.shape)-0.5)
+        noise = 0.15 * (np.random.rand(*positions.shape)-0.5)
+        # noise=0
 
-        positions = (positions + noise) * 5
+        positions = (positions + noise)/2 * np.mean(self.nuclei_sizes)
 
         return positions - np.mean(positions, axis=0) + L
 
@@ -420,5 +429,42 @@ class FastOverdampedSimulator:
 
     def dump_velocities(self):
         return self.drag_velocities, self.determisitic_velocities, self.random_velocities
+
+    def __flow_field(self, positions):
+
+        
+        # positions has shape (N_part, d)
+        p = positions - self.L
+
+        f = np.zeros_like(p)
+        f[:,1] = p[:,1]
+        # f[:,0] = p[:,0]
+
+        x1 = p[:,1] - self.L/15
+        x2 = p[:,1] + self.L/15
+        y = p[:,0] / self.L/2
+        y2 = y**2
+
+        n1 = np.sqrt(x1**2 + y2).reshape(-1,1)
+        n2 = np.sqrt(x2**2 + y2).reshape(-1,1)
+
+        f1 = np.zeros_like(p)
+        f2 = np.zeros_like(p)
+
+        f1[:,1] = -y
+        f1[:,0] = x1
+
+        f2[:,1] = y
+        f2[:,0] = -x2
+
+        f_tot = (f1/n1 + f2/n2) #- f * 0.1
+        # f_tot = - f * 0.1
+
+        f_tot = f_tot / np.linalg.norm(f_tot, axis=1).reshape(-1,1)
+        self.f = f_tot + f
+        # print(f)
+        return f_tot * self.flow_field
+        
+        
 
 

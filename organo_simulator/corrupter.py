@@ -4,12 +4,7 @@ from scipy.spatial import KDTree as scipy_KDTree
 
 
 class SimulationCorrupter:
-    """
-    TODO:
-        - return dict that map new inds to old ones
-            -- for untouched inds, {new: old}
-            -- for modified ones, {new: 'string'} with 'string' like 'fp', 'merge'...
-    """
+
     def __init__(self):
         pass
 

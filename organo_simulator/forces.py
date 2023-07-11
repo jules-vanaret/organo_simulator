@@ -31,7 +31,7 @@ def drag_velocities_function(parameters, sparse_distance_matrix,
                             positions, velocities,
                             drag_velocities_old):
 
-    neigh_velocities = parameters.viscosity_regularition_coeff * neighbor_velocities(
+    neigh_velocities = parameters.viscosity_regularization_coeff * neighbor_velocities(
         velocities, 
         sparse_distance_matrix.indices,
         sparse_distance_matrix.indptr
