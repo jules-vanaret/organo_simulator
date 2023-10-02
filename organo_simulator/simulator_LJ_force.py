@@ -199,6 +199,7 @@ class FastOverdampedSimulator:
         )
 
         self.flow_field = flow_field
+        self.matrix = np.eye(d) * -1
 
         # foo = 'bar'
 
@@ -210,6 +211,8 @@ class FastOverdampedSimulator:
         For integration of the equation of motion, we use Heun's method for
         SDEs (see Garcia-Alvarez, 2011)
         """
+
+        self.is_computing = True 
 
         self.t += dt
 
@@ -235,13 +238,15 @@ class FastOverdampedSimulator:
             max_overall_distance=self.max_overall_distance,
             energy_potential=self.energy_potential
         )
-        F = deterministic_forces + self.random_force 
+        # deterministic_forces = np.clip(deterministic_forces, -1000*self.energy_potential, 1000*self.energy_potential)
+        
+        F = deterministic_forces #+ self.random_force #! removed random force from 1st step
         dummy_velocities = F/self.viscosity
         drag_velocities = drag_velocities_from_neighbors(
             self.velocities, # use velocities at previous time steps (see Ya||a)
             sparse_distance_norms.indices,
             sparse_distance_norms.indptr
-        ) *0.9
+        ) *0.9 * 0.0 
         dummy_velocities = dummy_velocities + drag_velocities
         # if self.flow_field:
         #     dummy_velocities = dummy_velocities + self.__flow_field(self.positions)
@@ -258,6 +263,7 @@ class FastOverdampedSimulator:
             max_overall_distance=self.max_overall_distance,
             energy_potential=self.energy_potential
         )
+        # deterministic_forces = np.clip(deterministic_forces, -1000*self.energy_potential, 1000*self.energy_potential)
 
         F = deterministic_forces + self.random_force 
         velocities = F/self.viscosity
@@ -265,11 +271,11 @@ class FastOverdampedSimulator:
             dummy_velocities, # use velocities from first Heun's step
             sparse_distance_norms.indices,
             sparse_distance_norms.indptr
-        ) *0.9
+        ) *0.9 * 0.0
         velocities = velocities + drag_velocities
 
         if self.flow_field:
-            velocities = velocities + self.__flow_field(dummy_positions)
+            velocities = velocities + 0.01*self.__flow_field(dummy_positions)
 
         self.velocities = velocities
         self.positions = self.positions + dt * 0.5 * (dummy_velocities + velocities)
@@ -283,6 +289,8 @@ class FastOverdampedSimulator:
         #     self.positions,
         #     self.L
         # )
+
+        self.is_computing = False
     
     def __initialize_positions_sphere(self, L, N_part, equilibrium_radius, d, initialization):
         radius = equilibrium_radius / 2
@@ -357,7 +365,7 @@ class FastOverdampedSimulator:
         noise = 0.15 * (np.random.rand(*positions.shape)-0.5)
         # noise=0
 
-        positions = (positions + noise)/2 * np.mean(self.nuclei_sizes)
+        positions = (positions + noise) * np.mean(self.nuclei_sizes)
 
         return positions - np.mean(positions, axis=0) + L
 
@@ -430,7 +438,7 @@ class FastOverdampedSimulator:
     def dump_velocities(self):
         return self.drag_velocities, self.determisitic_velocities, self.random_velocities
 
-    def __flow_field(self, positions):
+    def OLD__flow_field(self, positions):
 
         
         # positions has shape (N_part, d)
@@ -464,7 +472,62 @@ class FastOverdampedSimulator:
         self.f = f_tot + f
         # print(f)
         return f_tot * self.flow_field
+    
+
+    def __flow_field(self, positions):
+
+        return (self.matrix @ (positions-self.L).T).T
         
         
+    def remove_all_particles(self):
+        self.positions = np.zeros((0,self.d))
+        self.velocities = np.zeros((0,self.d))
+        self.nuclei_sizes = np.zeros((0,1))
+        self.viscosity = np.zeros((0,1))
+        self.D = np.zeros((0,1))
+        self.persistence_time = np.zeros((0,1))
+        self.random_force = np.zeros((0,self.d))
+
+    def add_particles(self, positions, velocities=None, 
+                      nuclei_sizes=None, viscosity=None, D=None,
+                      persistence_time=None):
+
+        N_new_part = positions.shape[0]
+        
+        if velocities is None:
+            velocities = np.zeros_like(positions)
+        if nuclei_sizes is None and self.nuclei_sizes.shape[0] > 0:
+            nuclei_sizes = np.ones((N_new_part,1)) * np.mean(self.nuclei_sizes)
+        else:
+            nuclei_sizes = np.ones((N_new_part,1))
+        if viscosity is None and self.viscosity.shape[0] > 0:
+            viscosity = np.ones((N_new_part,1)) * np.mean(self.viscosity)
+        else:
+            viscosity = np.ones((N_new_part,1))
+        if D is None and self.D.shape[0] > 0:
+            D = np.ones((N_new_part,1)) * np.mean(self.D)
+        else:
+            D = np.ones((N_new_part,1))
+        if persistence_time is None and self.persistence_time.shape[0] > 0:
+            persistence_time = np.ones((N_new_part,1)) * np.mean(self.persistence_time)
+        else:
+            persistence_time = np.ones((N_new_part,1))
+        
+        self.positions = np.concatenate((self.positions, positions))
+        self.velocities = np.concatenate((self.velocities, velocities))
+        self.nuclei_sizes = np.concatenate((self.nuclei_sizes, nuclei_sizes))
+        self.viscosity = np.concatenate((self.viscosity, viscosity))
+        self.D = np.concatenate((self.D, D))
+        self.persistence_time = np.concatenate((self.persistence_time, persistence_time))
+        self.random_force = np.concatenate((self.random_force, self.__initialize_random_noise(
+            sigma=np.sqrt(2*D),
+            N_part=positions.shape[0], 
+            d=self.d
+        )))
+        self.N_part = self.positions.shape[0]
+
+        print('Now positions has shape', self.positions.shape)
+
+
 
 

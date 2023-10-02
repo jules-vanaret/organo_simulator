@@ -45,7 +45,6 @@ for i in tqdm(range(total_steps)):
         positions = simulator.dump_coordinates()
         time_pos = np.hstack((i/skip * np.ones((N_part,1)), positions))
 
-        #data = np.vstack((data, time_pos))
         data[int(i/skip)*len(time_pos):(int(i/skip)+1)*len(time_pos),:] = time_pos
         # data_points.append(positions)
 
