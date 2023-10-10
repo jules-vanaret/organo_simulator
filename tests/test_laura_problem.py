@@ -5,7 +5,7 @@ import napari
 
 np.random.seed(1)
 
-path_to_save = '/home/jvanaret/data/data_teflon/laura_simu'
+path_to_save = '/data1/data_teflon/laura_simu'
 
 for index_simu in range(10):
 
