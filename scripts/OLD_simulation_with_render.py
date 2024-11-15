@@ -66,10 +66,10 @@ data_points=[]
 
 
 for i in tqdm(range(total_steps)):
-    simulator.update_dynamics(dt=1)
+    organo_simulator.update_dynamics(dt=1)
 
     if i%skip==0:
-        positions = simulator.dump_coordinates()
+        positions = organo_simulator.dump_coordinates()
         time_pos = np.hstack((i/skip * np.ones((N_part,1)), positions))
 
         #data = np.vstack((data, time_pos))
@@ -106,7 +106,7 @@ for t in tqdm(range(int(max(data[:,0]))+1)):
 #         n_rays=n_rays,
 #         Nx=Nx,
 #         d=d,
-#         L=simulator.L,
+#         L=organo_simulator.L,
 #         gaussian_blur_sigma=1,
 #         gaussian_noise_mean=0.04,
 #         gaussian_noise_sigma=0.04
@@ -132,10 +132,10 @@ for t in tqdm(range(int(max(data[:,0]))+1)):
 viewer = napari.Viewer(ndisplay=d)
 
 
-viewer.add_points(data=data,      size=3, scale=(1,)+(Nx/(2*simulator.L),)*d)
+viewer.add_points(data=data,      size=3, scale=(1,)+(Nx/(2*organo_simulator.L),)*d)
 
-viewer.add_points(data=data_slow, size=4,face_color='blue', scale=(1,)+(Nx/(2*simulator.L),)*d)
-viewer.add_points(data=data_fast, size=4,face_color='red', scale=(1,)+(Nx/(2*simulator.L),)*d)
+viewer.add_points(data=data_slow, size=4,face_color='blue', scale=(1,)+(Nx/(2*organo_simulator.L),)*d)
+viewer.add_points(data=data_fast, size=4,face_color='red', scale=(1,)+(Nx/(2*organo_simulator.L),)*d)
 
 # if render:
 #     viewer.add_labels(labels)

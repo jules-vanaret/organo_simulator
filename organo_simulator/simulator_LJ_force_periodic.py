@@ -1,7 +1,7 @@
 import numpy as np
 import numba
 from scipy.spatial import KDTree as scipy_KDTree
-import simulator.utils as simulator_utils
+import organo_simulator.utils as simulator_utils
 from itertools import product
 
 

@@ -1,7 +1,7 @@
 import numpy as np
 from tqdm import tqdm
 # from organo_simulator.simulator_LJ_force import FastOverdampedSimulator
-from simulator.simulator_LJ_force_periodic import FastOverdampedSimulator
+from organo_simulator.simulator_LJ_force_periodic import FastOverdampedSimulator
 
 import napari
 
@@ -49,10 +49,10 @@ data = np.empty((N_part*Nt,d+1))
 # data_points=[]
 
 for i in tqdm(range(total_steps)):
-    simulator.update_dynamics(dt=dt)
+    organo_simulator.update_dynamics(dt=dt)
 
     if i%skip==0:
-        positions = simulator.dump_coordinates()
+        positions = organo_simulator.dump_coordinates()
         time_pos = np.hstack((i/skip * np.ones((N_part,1)), positions))
 
         data[int(i/skip)*len(time_pos):(int(i/skip)+1)*len(time_pos),:] = time_pos

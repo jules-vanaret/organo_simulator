@@ -29,9 +29,9 @@ all_positions = []
 
 for i in tqdm(range(N_steps)):
 
-    simulator.update_dynamics(dt=dt)
+    organo_simulator.update_dynamics(dt=dt)
 
-    all_positions.append(simulator.positions)
+    all_positions.append(organo_simulator.positions)
 
 
 napari_tracks = np.zeros((N_part*N_steps, 4))

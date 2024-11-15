@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-setup(name='simulator',
+setup(name='organo_simulator',
       version='1.0',
       description='',
       url='',
