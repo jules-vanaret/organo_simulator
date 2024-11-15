@@ -233,15 +233,7 @@ class FastOverdampedSimulator:
             sparse_distance_norms.indices,
             sparse_distance_norms.indptr
         )
-        # velocities = velocities + drag_velocity_from_neighbors_with_confinement(
-        #     velocities, 
-        #     self.positions,
-        #     sparse_distance_norms.indices,
-        #     sparse_distance_norms.indptr,
-        #     k=0.1,
-        #     L=self.L,
-        #     R_eq=self.equilibrium_radius
-        # )
+
         self.positions = self.positions + dt * velocities
 
         self.positions = self.__center_and_clip_positions(

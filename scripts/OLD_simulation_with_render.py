@@ -1,14 +1,14 @@
 import numpy as np
 from tqdm import tqdm
 from organo_simulator.simulator import FastOverdampedSimulator
-from organo_simulator.renderer import Renderer
+# from organo_simulator.renderer import Renderer
 from organo_simulator.utils import make_bounding_box
 import napari
 
 
 np.random.seed(2022)
 
-d=2 # dimension of simulation
+d=3 # dimension of simulation
 N_part = 50#200 # number of particles
 average_nuclei_size=8 # in physical units
 
@@ -30,8 +30,8 @@ N_fast = int(0.1*N_part)
 # persistence times (in physical units) for the OU process
 persistence_times = np.array([10]*(N_part-N_fast) + [50]*N_fast)#[20]*N_fast)
 viscosities = np.array([1000]*(N_part-N_fast) + [1000]*N_fast)
-#Ds = np.array([1.0]*(N_part-N_fast) + [2.0]*N_fast)#[1.0]*N_fast) # diffusion coefficients
-Ds=0
+Ds = np.array([1.0]*(N_part-N_fast) + [2.0]*N_fast)#[1.0]*N_fast) # diffusion coefficients
+# Ds=0
 
 # render = False # wether or not to add render (takes a looong time)
 Nx = 200 # length of the box in pixels for the rendering 

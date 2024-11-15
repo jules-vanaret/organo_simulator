@@ -98,7 +98,7 @@ def LJ_force_numba(r, nuclei_size, neighbor_size, eps):
 
 
 @numba.jit(nopython=True,parallel=True)
-def _LJ_interaction_forces_function(parameters, sparse_distance_matrix,
+def LJ_interaction_forces_function(parameters, sparse_distance_matrix,
                                     positions, velocities, t, dt,
                                     random_forces):
     """

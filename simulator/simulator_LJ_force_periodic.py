@@ -1,7 +1,7 @@
 import numpy as np
 import numba
 from scipy.spatial import KDTree as scipy_KDTree
-import organo_simulator.utils as simulator_utils
+import simulator.utils as simulator_utils
 from itertools import product
 
 
@@ -96,7 +96,7 @@ def forces_numba_setup(parallel):
     @numba.jit(nopython=True,parallel=parallel)
     def individual_att_rep_forces(positions, 
                         dist_data,dist_indices,dist_indptr,
-                        nuclei_sizes, eps):
+                        nuclei_sizes, eps, L):
         """
         Symmetrizing forces (setting Fij and Fji at the same
         time) is NOT faster !
@@ -121,7 +121,8 @@ def forces_numba_setup(parallel):
                     neighbor_size=nuclei_sizes[j,0],
                     eps=eps
                 )
-                dist_vector_ij = positions[j]-positions[i]
+                dist_vector_ij = positions[j]-positions[i] # needs to be wrapped
+                dist_vector_ij = (dist_vector_ij + L/2) % L - L/2 
 
                 indiv_forces_i = indiv_forces_i + force_magnitude*dist_vector_ij
 
@@ -144,7 +145,7 @@ class FastOverdampedSimulator:
         self.d = d
         self.N_part = N_part
 
-        if isinstance(nuclei_sizes, int):
+        if isinstance(nuclei_sizes, int | float):
             nuclei_sizes = nuclei_sizes * np.ones(shape=(N_part,1),dtype=float)
         elif isinstance(nuclei_sizes, np.ndarray):
             if nuclei_sizes.ndim == 1:
@@ -241,16 +242,23 @@ class FastOverdampedSimulator:
         # deterministic_forces = np.clip(deterministic_forces, -1000*self.energy_potential, 1000*self.energy_potential)
         
         F = deterministic_forces #+ self.random_force #! removed random force from 1st step
+        F_norm = np.linalg.norm(F, axis=1).reshape(-1,1)
+        F = np.divide(F, F_norm, out=np.zeros_like(F), where=F_norm!=0) * np.clip(F_norm, 0, 0.01)
         dummy_velocities = F/self.viscosity
-        drag_velocities = drag_velocities_from_neighbors(
-            self.velocities, # use velocities at previous time steps (see Ya||a)
-            sparse_distance_norms.indices,
-            sparse_distance_norms.indptr
-        ) *0.9 * 0.0 
-        dummy_velocities = dummy_velocities + drag_velocities
+        # drag_velocities = drag_velocities_from_neighbors(
+        #     self.velocities, # use velocities at previous time steps (see Ya||a)
+        #     sparse_distance_norms.indices,
+        #     sparse_distance_norms.indptr
+        # ) *0.9 
+        # dummy_velocities = dummy_velocities + drag_velocities
         # if self.flow_field:
         #     dummy_velocities = dummy_velocities + self.__flow_field(self.positions)
         dummy_positions = self.positions + dt * dummy_velocities
+
+        dummy_positions = self.__wrap_positions(
+            dummy_positions,
+            self.L
+        )
         ###
 
         
@@ -266,13 +274,15 @@ class FastOverdampedSimulator:
         # deterministic_forces = np.clip(deterministic_forces, -1000*self.energy_potential, 1000*self.energy_potential)
 
         F = deterministic_forces + self.random_force 
+        F_norm = np.linalg.norm(F, axis=1).reshape(-1,1)
+        F = np.divide(F, F_norm, out=np.zeros_like(F), where=F_norm!=0) * np.clip(F_norm, 0, 0.01)
         velocities = F/self.viscosity
-        drag_velocities = drag_velocities_from_neighbors(
-            dummy_velocities, # use velocities from first Heun's step
-            sparse_distance_norms.indices,
-            sparse_distance_norms.indptr
-        ) *0.9 * 0.0
-        velocities = velocities + drag_velocities
+        # drag_velocities = drag_velocities_from_neighbors(
+        #     dummy_velocities, # use velocities from first Heun's step
+        #     sparse_distance_norms.indices,
+        #     sparse_distance_norms.indptr
+        # ) *0.9 
+        # velocities = velocities + drag_velocities
 
         if self.flow_field:
             velocities = velocities + 0.01*self.__flow_field(dummy_positions)
@@ -282,7 +292,7 @@ class FastOverdampedSimulator:
         ###
 
         self.determisitic_velocities = deterministic_forces / self.viscosity
-        self.drag_velocities = drag_velocities
+        # self.drag_velocities = drag_velocities
         self.random_velocities = self.random_force / self.viscosity
         #/!\ DONT CENTER !
         # self.positions = self.__center_and_clip_positions(
@@ -290,84 +300,40 @@ class FastOverdampedSimulator:
         #     self.L
         # )
 
+        self.positions = self.__wrap_positions(
+            self.positions,
+            self.L
+        )
+
         self.is_computing = False
     
-    def __initialize_positions_sphere(self, L, N_part, equilibrium_radius, d, initialization):
-        radius = equilibrium_radius / 2
-        radiuses = radius * np.power(np.random.uniform(0,1,size=(N_part,1)),1/d)
-        if d==2:
-            positions = L + radiuses * simulator_utils.random_2d_unit_vectors(N_part)
-        elif d==3:
-            if initialization == 'sausage':
-                positions = self.__initialize_as_sausage(N_part)
-            else:
-                positions = L + radiuses * simulator_utils.random_3d_unit_vectors(N_part)
-        
-        return positions
-
-    def __initialize_positions_cubic(self, L, N_part, equilibrium_radius, d, initialization):
-        side = int(np.ceil((2**(d-1)*N_part)**(1/d)))
-
-        foo = np.max(d-1,2)
-
-        prod = product(*( (range(int(side/2)),)*foo+(range(side),)*(d-foo) ))
-        prod = [elem for elem in prod][:N_part]
-        np.random.shuffle(prod)
-
-        positions = np.zeros((N_part,d))
-
-        for i,inds in zip(range(N_part), prod):
-            positions[i] = np.array(inds)
-
-        noise = 0.25 * (np.random.rand(*positions.shape)-0.5)
-
-        positions = (positions + noise) * 14
-
-        return positions - np.mean(positions, axis=0) + L
-
     def __initialize_positions(self, L, N_part, equilibrium_radius, d, initialization):
         """
-        Initialize particles positions like a cylinder with 
-        hexagonal packing + a bit of noise
+        Initialize particles positions on a uniform square grid
         """
-        side = int(np.ceil((2**(d-1)*N_part)**(1/d)))+1
 
-        positions = []
+        box_size = int(np.ceil(N_part**(1/d)))
 
-        if d==2:
-            for i in range(side):
-                for j in range(int(side/2)):
+        positions = np.meshgrid(*[np.linspace(0.05*L,0.95*L,box_size)]*d)
+        positions = np.array([positions[i].flatten() for i in range(d)]).T
 
-                    positions.append(
-                        [
-                            2*i + j%2,
-                            np.sqrt(3) * j
-                        ]
-                    )
+        positions = positions[:N_part]
 
-        elif d==3:
-            for i in range(side):
-                for j in range(int(side/2)):
-                    for k in range(int(side/2)):
+        dx = 0.9 * L / box_size
 
-                        positions.append(
-                            [
-                                2*i + (j+k)%2,
-                                np.sqrt(3) * (j+(k%2)/3),
-                                2*np.sqrt(6)/3*k
-                            ]
-                        )
-        
-        positions = np.array(positions).astype(float)[:N_part]
+        # import napari
 
-        assert len(positions) == N_part
-        
-        noise = 0.15 * (np.random.rand(*positions.shape)-0.5)
-        # noise=0
+        # viewer = napari.Viewer()
+        # viewer.add_points(positions, size=1)
 
-        positions = (positions + noise) * np.mean(self.nuclei_sizes)
+        # napari.run()
 
-        return positions - np.mean(positions, axis=0) + L
+        noise = 0.1 * dx * (np.random.rand(*positions.shape)-0.5)
+
+        positions = (positions + noise)
+
+        return positions
+
 
     def __initialize_velocities(self, positions, nuclei_sizes, max_overall_distance, 
                                 energy_potential, random_force):
@@ -380,25 +346,12 @@ class FastOverdampedSimulator:
     def __initialize_random_noise(self, sigma, N_part, d):
         return self.__random_noise(sigma=sigma, N_part=N_part, d=d)
 
-    def __initialize_as_sausage(self, N_part):
-        
-        mean_nuclei_size = np.mean(self.nuclei_sizes)
-        l = (N_part * 4 * 64 * mean_nuclei_size**3 / 0.740) ** (1/self.d) / np.sqrt(2)
-        self.L = l/1.5
-        
-        y_positions = np.random.uniform(0,l,size=(N_part))
-        radiuses = l/8 * np.power(np.random.uniform(0,1,size=(N_part,1)),1/2)
-        zx_positions = radiuses * simulator_utils.random_2d_unit_vectors(N_part)
-
-        positions = np.array([zx_positions[:,0], y_positions, zx_positions[:,1]]).T
-
-        return positions
 
     def __attraction_repulsion_force(self, positions, nuclei_sizes, 
                                     max_overall_distance,
                                      energy_potential):
         
-        tree = scipy_KDTree(positions)
+        tree = scipy_KDTree(positions, boxsize=self.L)
 
         sparse_distance_norms = tree.sparse_distance_matrix(
                             tree,
@@ -415,13 +368,17 @@ class FastOverdampedSimulator:
             dist_indices=sparse_distance_norms.indices,
             dist_indptr=sparse_distance_norms.indptr,
             nuclei_sizes=nuclei_sizes,
-            eps=energy_potential
+            eps=energy_potential,
+            L=self.L
         )
 
         return F, sparse_distance_norms
 
     def __random_noise(self, sigma, N_part, d):
         return sigma * np.random.normal(size=(N_part, d))
+
+    def __wrap_positions(self, positions, L):
+        return np.mod(positions, L)
 
     def __center_and_clip_positions(self, positions, L):
         average_positions = np.mean(positions, axis=0)

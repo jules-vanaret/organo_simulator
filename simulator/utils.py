@@ -94,7 +94,3 @@ def delete_content_of_dir(path_to_dir: str, content_type: str = ''):
             except IsADirectoryError:
                 shutil.rmtree(f)
 
-
-if __name__ == '__main__':
-
-    print(make_bounding_box((1,1)))
