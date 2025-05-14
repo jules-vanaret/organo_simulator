@@ -1,8 +1,19 @@
 # Organoid Simulator
 
-This repository is composed of :
+If you are using this code, please cite the following paper:
 
-* [TO BE DONE]
+```
+@article{vanaret2023detector,
+  title={A detector-independent quality score for cell segmentation without ground truth in 3D live fluorescence microscopy},
+  author={Vanaret, Jules and Dupuis, Victoria and Lenne, Pierre-Fran{\c{c}}ois and Richard, Fr{\'e}d{\'e}ric and Tlili, Sham and Roudot, Philippe},
+  journal={IEEE Journal of Selected Topics in Quantum Electronics},
+  volume={29},
+  number={4: Biophotonics},
+  pages={1--12},
+  year={2023},
+  publisher={IEEE}
+}
+```
 
 ## Table of contents
 
@@ -12,23 +23,13 @@ This repository is composed of :
 
 ## Installation
 
-Package that should be installed manually:
+Packages that should be installed manually:
 * numba
 * napari
 * tqdm
 
-Make sure local python package is installed :
-
+After cloning the repository, you can install the package with pip:
 ```bash
 # from repo root (the DOT "." is important !!!)
 cd organo_simulator;pip install -e .
 ```
-
-
-## TODO
-
-* add things to do
-
-## DONE
-
-* created a README 
