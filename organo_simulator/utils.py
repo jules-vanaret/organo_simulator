@@ -3,6 +3,12 @@ import shutil
 import os
 import glob
 import tqdm
+import matplotlib.pyplot as plt
+try:
+    import napari
+except ImportError:
+    print("Napari is not installed. Please install it to use the display_particles_in_napari function.")
+    napari = None
 
 
 
@@ -94,3 +100,37 @@ def delete_content_of_dir(path_to_dir: str, content_type: str = ''):
             except IsADirectoryError:
                 shutil.rmtree(f)
 
+def display_particles_in_napari(tracks, nuclei_sizes, Nt, L):
+
+
+    # random_ids = np.zeros(tracks.shape[0])
+    unique_ids = np.unique(tracks[:,0])
+    random_ids = np.random.choice(unique_ids, len(unique_ids), replace=False)
+
+    all_random_ids = np.zeros(tracks.shape[0])
+    for unique_id in unique_ids:
+        all_random_ids[tracks[:,0] == unique_id] = random_ids[unique_ids == unique_id]
+
+    props = {'random_ids': all_random_ids}
+
+
+
+    viewer = napari.Viewer()
+    tracks_layer = viewer.add_tracks(tracks, tail_length=6, blending='opaque', tail_width=8, name='tracks', properties=props)
+    indices_tp = np.where(
+        np.max(
+            np.abs(np.diff(tracks_layer.data[:,2:], axis=0)),
+            axis=1
+        ) > L/2
+    )
+    tracks_layer._manager._track_connex[indices_tp] = False
+    tracks_layer.events.rebuild_tracks()
+
+    points =  tracks_layer.data[:,1:]
+    sizes = np.repeat(nuclei_sizes, Nt, axis=0)
+    face_colors_at_t = plt.cm.inferno(nuclei_sizes/np.max(nuclei_sizes))
+    face_colors = np.repeat(face_colors_at_t, Nt, axis=0)
+
+    viewer.add_points(points, size=sizes, face_color=face_colors, edge_color='black', name='particles')
+
+    napari.run()

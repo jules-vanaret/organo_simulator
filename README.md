@@ -23,13 +23,11 @@ If you are using this code, please cite the following paper:
 
 ## Installation
 
-Packages that should be installed manually:
-* numba
-* napari
-* tqdm
-
 After cloning the repository, you can install the package with pip:
 ```bash
 # from repo root (the DOT "." is important !!!)
 cd organo_simulator;pip install -e .
 ```
+Packages that should be installed manually:
+
+* [napari](https://napari.org/stable/tutorials/fundamentals/installation.html) (for visualization)

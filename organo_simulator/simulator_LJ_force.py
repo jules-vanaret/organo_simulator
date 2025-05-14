@@ -5,13 +5,6 @@ import organo_simulator.utils as simulator_utils
 from itertools import product
 
 
-"""
-TODO:
-    - test if force symmetrization is faster
-""" 
-
-
-
 
 @numba.jit(nopython=True, parallel=True)
 def drag_velocities_from_neighbors(velocities, 
@@ -56,47 +49,47 @@ def LJ_force_numba(r, nuclei_size, neighbor_size, eps):
 
         r_sup_sum_size = r > sum_size
 
-        sum_size_6 = np.power(sum_size, 6)
+        sum_size_6 = np.power(sigma, 6)
         sum_size_12 = np.power(sum_size_6, 2)
         
-        if not r_sup_sum_size:
-            r_minus_1 = 1/r
-            r_minus_7 = np.power(r_minus_1, 7)
+        # if not r_sup_sum_size:
+        r_minus_1 = 1/r
+        r_minus_7 = np.power(r_minus_1, 7)
 
 
-            repulsion = 12*r*r_minus_7*r_minus_7 * sum_size_12
-            attraction = 6*r_minus_7 * sum_size_6
+        repulsion = 2*r*r_minus_7*r_minus_7 * sum_size_12
+        attraction = r_minus_7 * sum_size_6
 
-            # divide by r so that (positions[j]-positions[i]) can be 
-            # directly multiplied by the magnitude without having to
-            # compute the distance again 
-            return 4 * eps * (attraction - repulsion) * r_minus_1
+        # divide by r so that (positions[j]-positions[i]) can be 
+        # directly multiplied by the magnitude without having to
+        # compute the distance again 
+        return 24 * eps * (attraction - repulsion) * r_minus_1
 
-        r_sup_rbar = r > 1.33*sigma
+        # r_sup_rbar = r > 1.33*sigma
 
-        if r_sup_rbar:
-            sigma_bar = 1.33*sigma - sum_size
-            r_minus_1_bar = 1/(r-sigma_bar)
-            r_minus_7_bar = np.power(r_minus_1_bar, 7)
+        # if r_sup_rbar:
+        #     sigma_bar = 1.33*sigma - sum_size
+        #     r_minus_1_bar = 1/(r-sigma_bar)
+        #     r_minus_7_bar = np.power(r_minus_1_bar, 7)
 
-            repulsion = 12*(r-sigma_bar)*r_minus_7_bar*r_minus_7_bar * sum_size_12
-            attraction = 6*r_minus_7_bar * sum_size_6
+        #     repulsion = 2*(r-sigma_bar)*r_minus_7_bar*r_minus_7_bar * sum_size_12
+        #     attraction = r_minus_7_bar * sum_size_6
 
-            # divide by r so that (positions[j]-positions[i]) can be 
-            # directly multiplied by the magnitude without having to
-            # compute the distance again 
-            return 4 * eps * (attraction - repulsion) / r
+        #     # divide by r so that (positions[j]-positions[i]) can be 
+        #     # directly multiplied by the magnitude without having to
+        #     # compute the distance again 
+        #     return 24 * eps * (attraction - repulsion) / r
 
-        return 0
+        # return 0
     
 
 
 def forces_numba_setup(parallel):
     
-    @numba.jit(nopython=True,parallel=parallel)
+    @numba.jit(nopython=True, parallel=parallel)
     def individual_att_rep_forces(positions, 
                         dist_data,dist_indices,dist_indptr,
-                        nuclei_sizes, eps):
+                        nuclei_sizes, eps, L, periodic):
         """
         Symmetrizing forces (setting Fij and Fji at the same
         time) is NOT faster !
@@ -122,6 +115,8 @@ def forces_numba_setup(parallel):
                     eps=eps
                 )
                 dist_vector_ij = positions[j]-positions[i]
+                if periodic:
+                    dist_vector_ij = (dist_vector_ij + L/2) % L - L/2
 
                 indiv_forces_i = indiv_forces_i + force_magnitude*dist_vector_ij
 
@@ -135,9 +130,8 @@ def forces_numba_setup(parallel):
 
 class FastOverdampedSimulator:
     def __init__(self, L, Nx, d, N_part, nuclei_sizes, viscosity, 
-                 D, persistence_time, energy_potential,
-                 initialization=None,
-                 parallel=False, flow_field=None):
+                 D, persistence_time, potential_energy,
+                 parallel=False, flow_field_function=None, periodic=True):
 
         self.t = 0
         self.Nx = Nx
@@ -154,13 +148,6 @@ class FastOverdampedSimulator:
         self.max_overall_distance = self.max_nuclei_size * 1.7/2**(1/6) * 2
 
         print(f'Max overall distance: {self.max_overall_distance:.2f}')
-
-        packing_fraction = 0.906 if d==2 else 0.740 # hexagonal lattice packing fraction
-        self.equilibrium_radius = np.mean(nuclei_sizes) * np.power(N_part/packing_fraction,1/d)
-        if L is None:
-            # Use hexagonal lattice packing fraction to infer
-            # the total radius at equlibrium
-            L = 2 * self.equilibrium_radius
         self.L = L
         print(f'Box size: {self.L:.2f}')
 
@@ -181,27 +168,26 @@ class FastOverdampedSimulator:
                 persistence_time = persistence_time[:,None]
         self.persistence_time = persistence_time
         
-        self.energy_potential = energy_potential
+        self.potential_energy = potential_energy
 
         self.individual_att_rep_forces = forces_numba_setup(parallel)
 
         if parallel:
             numba.set_num_threads(2)
             
-        self.positions = self.__initialize_positions(L, N_part, self.equilibrium_radius, d, initialization)
+        self.positions = self.__initialize_positions(L, N_part, d)
         self.random_force = self.__initialize_random_noise(self.sigma_random, N_part, d)
         self.velocities = self.__initialize_velocities(
             self.positions,
             self.nuclei_sizes,
             self.max_overall_distance,
-            self.energy_potential,
+            self.potential_energy,
             self.random_force
         )
 
-        self.flow_field = flow_field
-        self.matrix = np.eye(d) * -1
+        self.flow_field_function = flow_field_function
 
-        # foo = 'bar'
+        self.periodic = periodic
 
     def update_dynamics(self, dt):
         """
@@ -236,34 +222,40 @@ class FastOverdampedSimulator:
             positions=self.positions,
             nuclei_sizes=self.nuclei_sizes,
             max_overall_distance=self.max_overall_distance,
-            energy_potential=self.energy_potential
+            potential_energy=self.potential_energy,
+            L=self.L,
+            periodic=self.periodic
         )
-        # deterministic_forces = np.clip(deterministic_forces, -1000*self.energy_potential, 1000*self.energy_potential)
-        
+
         F = deterministic_forces #+ self.random_force #! removed random force from 1st step
         dummy_velocities = F/self.viscosity
         drag_velocities = drag_velocities_from_neighbors(
             self.velocities, # use velocities at previous time steps (see Ya||a)
             sparse_distance_norms.indices,
             sparse_distance_norms.indptr
-        ) *0.9 * 0.0 
+        ) * self.viscosity/(1+self.viscosity) 
         dummy_velocities = dummy_velocities + drag_velocities
-        # if self.flow_field:
-        #     dummy_velocities = dummy_velocities + self.__flow_field(self.positions)
+        if self.flow_field_function:
+            dummy_velocities = dummy_velocities + self.flow_field_function(self.positions)
         dummy_positions = self.positions + dt * dummy_velocities
+
+        if self.periodic:
+            dummy_positions = self.__wrap_positions(
+                dummy_positions,
+                self.L
+            )
         ###
 
         
         # ### Second step of Heun's method
-        # self.positions = dummy_positions
-        # self.velocities = dummy_velocities
         deterministic_forces, sparse_distance_norms = self.__attraction_repulsion_force(
             positions=dummy_positions,
             nuclei_sizes=self.nuclei_sizes,
             max_overall_distance=self.max_overall_distance,
-            energy_potential=self.energy_potential
+            potential_energy=self.potential_energy,
+            L=self.L,
+            periodic=self.periodic
         )
-        # deterministic_forces = np.clip(deterministic_forces, -1000*self.energy_potential, 1000*self.energy_potential)
 
         F = deterministic_forces + self.random_force 
         velocities = F/self.viscosity
@@ -271,11 +263,11 @@ class FastOverdampedSimulator:
             dummy_velocities, # use velocities from first Heun's step
             sparse_distance_norms.indices,
             sparse_distance_norms.indptr
-        ) *0.9 * 0.0
+        ) * self.viscosity/(1+self.viscosity)
         velocities = velocities + drag_velocities
 
-        if self.flow_field:
-            velocities = velocities + 0.01*self.__flow_field(dummy_positions)
+        if self.flow_field_function:
+            velocities = velocities + self.flow_field_function(dummy_positions)
 
         self.velocities = velocities
         self.positions = self.positions + dt * 0.5 * (dummy_velocities + velocities)
@@ -284,93 +276,38 @@ class FastOverdampedSimulator:
         self.determisitic_velocities = deterministic_forces / self.viscosity
         self.drag_velocities = drag_velocities
         self.random_velocities = self.random_force / self.viscosity
-        #/!\ DONT CENTER !
-        # self.positions = self.__center_and_clip_positions(
-        #     self.positions,
-        #     self.L
-        # )
 
-        self.is_computing = False
+        if self.periodic:        
+            self.positions = self.__wrap_positions(
+                self.positions,
+                self.L
+            )
     
-    def __initialize_positions_sphere(self, L, N_part, equilibrium_radius, d, initialization):
-        radius = equilibrium_radius / 2
-        radiuses = radius * np.power(np.random.uniform(0,1,size=(N_part,1)),1/d)
-        if d==2:
-            positions = L + radiuses * simulator_utils.random_2d_unit_vectors(N_part)
-        elif d==3:
-            if initialization == 'sausage':
-                positions = self.__initialize_as_sausage(N_part)
-            else:
-                positions = L + radiuses * simulator_utils.random_3d_unit_vectors(N_part)
-        
-        return positions
+    def __wrap_positions(self, positions, L):
+        return np.mod(positions, L)
 
-    def __initialize_positions_cubic(self, L, N_part, equilibrium_radius, d, initialization):
-        side = int(np.ceil((2**(d-1)*N_part)**(1/d)))
-
-        foo = np.max(d-1,2)
-
-        prod = product(*( (range(int(side/2)),)*foo+(range(side),)*(d-foo) ))
-        prod = [elem for elem in prod][:N_part]
-        np.random.shuffle(prod)
-
-        positions = np.zeros((N_part,d))
-
-        for i,inds in zip(range(N_part), prod):
-            positions[i] = np.array(inds)
-
-        noise = 0.25 * (np.random.rand(*positions.shape)-0.5)
-
-        positions = (positions + noise) * 14
-
-        return positions - np.mean(positions, axis=0) + L
-
-    def __initialize_positions(self, L, N_part, equilibrium_radius, d, initialization):
+    def __initialize_positions(self, L, N_part, d):
         """
         Initialize particles positions like a cylinder with 
         hexagonal packing + a bit of noise
         """
-        side = int(np.ceil((2**(d-1)*N_part)**(1/d)))+1
+        box_size = int(np.ceil(N_part**(1/d)))
 
-        positions = []
+        positions = np.meshgrid(*[np.linspace(0.05*L,0.95*L,box_size)]*d)
+        positions = np.array([positions[i].flatten() for i in range(d)]).T
 
-        if d==2:
-            for i in range(side):
-                for j in range(int(side/2)):
+        positions = positions[:N_part]
 
-                    positions.append(
-                        [
-                            2*i + j%2,
-                            np.sqrt(3) * j
-                        ]
-                    )
+        dx = 0.9 * L / box_size
 
-        elif d==3:
-            for i in range(side):
-                for j in range(int(side/2)):
-                    for k in range(int(side/2)):
+        noise = 0.1 * dx * (np.random.rand(*positions.shape)-0.5)
 
-                        positions.append(
-                            [
-                                2*i + (j+k)%2,
-                                np.sqrt(3) * (j+(k%2)/3),
-                                2*np.sqrt(6)/3*k
-                            ]
-                        )
-        
-        positions = np.array(positions).astype(float)[:N_part]
+        positions = (positions + noise)
 
-        assert len(positions) == N_part
-        
-        noise = 0.15 * (np.random.rand(*positions.shape)-0.5)
-        # noise=0
-
-        positions = (positions + noise) * np.mean(self.nuclei_sizes)
-
-        return positions - np.mean(positions, axis=0) + L
+        return positions
 
     def __initialize_velocities(self, positions, nuclei_sizes, max_overall_distance, 
-                                energy_potential, random_force):
+                                potential_energy, random_force):
         """
         Initialize velocities from interaction and random forces only
         """
@@ -380,25 +317,14 @@ class FastOverdampedSimulator:
     def __initialize_random_noise(self, sigma, N_part, d):
         return self.__random_noise(sigma=sigma, N_part=N_part, d=d)
 
-    def __initialize_as_sausage(self, N_part):
-        
-        mean_nuclei_size = np.mean(self.nuclei_sizes)
-        l = (N_part * 4 * 64 * mean_nuclei_size**3 / 0.740) ** (1/self.d) / np.sqrt(2)
-        self.L = l/1.5
-        
-        y_positions = np.random.uniform(0,l,size=(N_part))
-        radiuses = l/8 * np.power(np.random.uniform(0,1,size=(N_part,1)),1/2)
-        zx_positions = radiuses * simulator_utils.random_2d_unit_vectors(N_part)
-
-        positions = np.array([zx_positions[:,0], y_positions, zx_positions[:,1]]).T
-
-        return positions
-
     def __attraction_repulsion_force(self, positions, nuclei_sizes, 
                                     max_overall_distance,
-                                     energy_potential):
+                                     potential_energy, L, periodic):
         
-        tree = scipy_KDTree(positions)
+        if periodic:
+            tree = scipy_KDTree(positions, boxsize=L)
+        else:
+            tree = scipy_KDTree(positions)
 
         sparse_distance_norms = tree.sparse_distance_matrix(
                             tree,
@@ -415,7 +341,9 @@ class FastOverdampedSimulator:
             dist_indices=sparse_distance_norms.indices,
             dist_indptr=sparse_distance_norms.indptr,
             nuclei_sizes=nuclei_sizes,
-            eps=energy_potential
+            eps=potential_energy,
+            L=L,
+            periodic=periodic
         )
 
         return F, sparse_distance_norms
@@ -429,16 +357,13 @@ class FastOverdampedSimulator:
 
         return positions
 
-    def dump_array(self):
-        raise NotImplementedError
-
     def dump_coordinates(self):
         return self.positions
 
     def dump_velocities(self):
         return self.drag_velocities, self.determisitic_velocities, self.random_velocities
 
-    def OLD__flow_field(self, positions):
+    def OLDflow_field_function(self, positions):
 
         
         # positions has shape (N_part, d)
@@ -471,63 +396,11 @@ class FastOverdampedSimulator:
         f_tot = f_tot / np.linalg.norm(f_tot, axis=1).reshape(-1,1)
         self.f = f_tot + f
         # print(f)
-        return f_tot * self.flow_field
+        return f_tot * self.flow_field_function
     
 
-    def __flow_field(self, positions):
-
+    def flow_field_function(self, positions):
         return (self.matrix @ (positions-self.L).T).T
-        
-        
-    def remove_all_particles(self):
-        self.positions = np.zeros((0,self.d))
-        self.velocities = np.zeros((0,self.d))
-        self.nuclei_sizes = np.zeros((0,1))
-        self.viscosity = np.zeros((0,1))
-        self.D = np.zeros((0,1))
-        self.persistence_time = np.zeros((0,1))
-        self.random_force = np.zeros((0,self.d))
-
-    def add_particles(self, positions, velocities=None, 
-                      nuclei_sizes=None, viscosity=None, D=None,
-                      persistence_time=None):
-
-        N_new_part = positions.shape[0]
-        
-        if velocities is None:
-            velocities = np.zeros_like(positions)
-        if nuclei_sizes is None and self.nuclei_sizes.shape[0] > 0:
-            nuclei_sizes = np.ones((N_new_part,1)) * np.mean(self.nuclei_sizes)
-        else:
-            nuclei_sizes = np.ones((N_new_part,1))
-        if viscosity is None and self.viscosity.shape[0] > 0:
-            viscosity = np.ones((N_new_part,1)) * np.mean(self.viscosity)
-        else:
-            viscosity = np.ones((N_new_part,1))
-        if D is None and self.D.shape[0] > 0:
-            D = np.ones((N_new_part,1)) * np.mean(self.D)
-        else:
-            D = np.ones((N_new_part,1))
-        if persistence_time is None and self.persistence_time.shape[0] > 0:
-            persistence_time = np.ones((N_new_part,1)) * np.mean(self.persistence_time)
-        else:
-            persistence_time = np.ones((N_new_part,1))
-        
-        self.positions = np.concatenate((self.positions, positions))
-        self.velocities = np.concatenate((self.velocities, velocities))
-        self.nuclei_sizes = np.concatenate((self.nuclei_sizes, nuclei_sizes))
-        self.viscosity = np.concatenate((self.viscosity, viscosity))
-        self.D = np.concatenate((self.D, D))
-        self.persistence_time = np.concatenate((self.persistence_time, persistence_time))
-        self.random_force = np.concatenate((self.random_force, self.__initialize_random_noise(
-            sigma=np.sqrt(2*D),
-            N_part=positions.shape[0], 
-            d=self.d
-        )))
-        self.N_part = self.positions.shape[0]
-
-        print('Now positions has shape', self.positions.shape)
-
 
 
 

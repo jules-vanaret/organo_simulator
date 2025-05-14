@@ -9,4 +9,8 @@ setup(name='organo_simulator',
       license='MIT',
       packages=find_packages(),
       zip_safe=False,
-      python_requires='>=3.7',)
+      python_requires='>=3.9',
+      install_requires=[
+        'numba',
+        'scipy',
+      ],)

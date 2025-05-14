@@ -6,4 +6,6 @@
 .vscode
 __pycache__
 
-.old
+_old/
+
+tests/
