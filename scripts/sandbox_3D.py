@@ -9,9 +9,9 @@ import matplotlib.pyplot as plt
 np.random.seed(1)
 
 
-dt = 1
-d = 2 # dimension of simulation
-N_part = 100 # number of particles
+dt = 10
+d = 3 # dimension of simulation
+N_part = 1000 # number of particles
 # nuclei_sizes = 0.7
 # nuclei_sizes = np.random.uniform(0.3,1,N_part)
 nuclei_sizes = np.random.uniform(0.5,1,N_part)
@@ -42,7 +42,7 @@ simulator = FastOverdampedSimulator(
 
 skip_time = 100 # return coordinates every ... s
 skip = int(skip_time/dt)
-total_time = 1000 # total number of simulation steps
+total_time = 10000 # total number of simulation steps
 total_steps = int(total_time/dt) 
 Nt = int(total_steps/skip)
 

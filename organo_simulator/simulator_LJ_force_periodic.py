@@ -56,7 +56,8 @@ def LJ_force_numba(r, nuclei_size, neighbor_size, eps):
 
         r_sup_sum_size = r > sum_size
 
-        sum_size_6 = np.power(sum_size, 6)
+        sum_size_6 = np.power(sigma, 6)
+        # sum_size_6 = np.power(sum_size, 6)
         sum_size_12 = np.power(sum_size_6, 2)
         
         if not r_sup_sum_size:
@@ -244,13 +245,13 @@ class FastOverdampedSimulator:
         F = deterministic_forces #+ self.random_force #! removed random force from 1st step
         F_norm = np.linalg.norm(F, axis=1).reshape(-1,1)
         F = np.divide(F, F_norm, out=np.zeros_like(F), where=F_norm!=0) * np.clip(F_norm, 0, 0.01)
-        dummy_velocities = F/self.viscosity
-        # drag_velocities = drag_velocities_from_neighbors(
-        #     self.velocities, # use velocities at previous time steps (see Ya||a)
-        #     sparse_distance_norms.indices,
-        #     sparse_distance_norms.indptr
-        # ) *0.9 
-        # dummy_velocities = dummy_velocities + drag_velocities
+        dummy_velocities = F#/self.viscosity
+        drag_velocities = drag_velocities_from_neighbors(
+            self.velocities, # use velocities at previous time steps (see Ya||a)
+            sparse_distance_norms.indices,
+            sparse_distance_norms.indptr
+        ) *self.viscosity/(1+self.viscosity)
+        dummy_velocities = dummy_velocities + drag_velocities
         # if self.flow_field:
         #     dummy_velocities = dummy_velocities + self.__flow_field(self.positions)
         dummy_positions = self.positions + dt * dummy_velocities
@@ -276,13 +277,14 @@ class FastOverdampedSimulator:
         F = deterministic_forces + self.random_force 
         F_norm = np.linalg.norm(F, axis=1).reshape(-1,1)
         F = np.divide(F, F_norm, out=np.zeros_like(F), where=F_norm!=0) * np.clip(F_norm, 0, 0.01)
-        velocities = F/self.viscosity
-        # drag_velocities = drag_velocities_from_neighbors(
-        #     dummy_velocities, # use velocities from first Heun's step
-        #     sparse_distance_norms.indices,
-        #     sparse_distance_norms.indptr
-        # ) *0.9 
-        # velocities = velocities + drag_velocities
+        velocities = F#/self.viscosity
+        drag_velocities = drag_velocities_from_neighbors(
+            dummy_velocities, # use velocities from first Heun's step
+            sparse_distance_norms.indices,
+            sparse_distance_norms.indptr
+        ) *self.viscosity/(1+self.viscosity)
+
+        velocities = velocities + drag_velocities
 
         if self.flow_field:
             velocities = velocities + 0.01*self.__flow_field(dummy_positions)
@@ -311,6 +313,28 @@ class FastOverdampedSimulator:
         """
         Initialize particles positions on a uniform square grid
         """
+
+        if initialization=='showcase':
+            print('Initializing particles in a showcase configuration')
+            # positions = np.meshgrid(*[np.linspace(0.25*L,0.75*L,N_part)]*d)
+            # positions = np.array([positions[i].flatten() for i in range(d)]).T
+            # print(positions.shape)
+
+            # Calculate grid spacing
+            grid_size = int(np.ceil(np.sqrt(N_part)))
+            spacing = L / grid_size
+
+            # Generate coordinates
+            x = np.linspace(L/2-2, L/2 +2, grid_size)
+            y = np.linspace(L/2-2, L/2 +2, grid_size)
+
+            # Create grid points
+            positions = np.array([(xi, yi) for xi in x for yi in y])
+            print(positions.shape)
+            # Select the first N positions
+            positions = positions[:N_part]
+            print(positions)
+            return positions
 
         box_size = int(np.ceil(N_part**(1/d)))
 
